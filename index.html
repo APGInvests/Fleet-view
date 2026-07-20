@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#191714" />
+<title>FleetView — Generator Fleet Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600;1,700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#191714; --card:#221f1b; --surface2:#2b2723; --ink:#efe7d9; --ink2:#a99e8f; --line:#38332c;
+    --accent:#c77455; --accent-ink:#191714;
+    --green:#4fae7a; --yellow:#e0b23f; --orange:#e2823f; --red:#dc5142; --grey:#8a8175; --blue:#6b93d6;
+    --serif:'Playfair Display',Georgia,'Times New Roman',serif;
+    --mono:'Space Mono','SFMono-Regular',Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 12px 34px rgba(0,0,0,.4);
+    --radius:14px;
+    --topbar-bg:#1c1915; --showbar-bg:#211d18; --input-bg:#211d18;
+    --chip-bg:#241f1a; --chip-ink:#b7ac9b;
+    --btn-dark-bg:#efe7d9; --btn-dark-ink:#1c1510;
+    --banner-bg:#2a2016; --banner-line:#4d3b24; --banner-ink:#e7c48f;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4eee3; --card:#fffdf7; --surface2:#ece4d6; --ink:#211e19; --ink2:#857b6b; --line:#e3dacb;
+    --accent:#bd5f45;
+    --green:#1f9d57; --yellow:#c98f14; --orange:#cf6420; --red:#c5302a; --grey:#8a8073; --blue:#2f6fd0;
+    --shadow:0 1px 2px rgba(60,45,25,.07),0 12px 30px rgba(60,45,25,.10);
+    --topbar-bg:#fffdf7; --showbar-bg:#efe8db; --input-bg:#fffdf7;
+    --chip-bg:#ece4d5; --chip-ink:#6d6455;
+    --btn-dark-bg:#211e19; --btn-dark-ink:#f5efe5;
+    --banner-bg:#f7ecd7; --banner-line:#e6cfa0; --banner-ink:#8a5a12;
+  }
+  :root[data-theme="light"] .chip.warn{background:#f7ecd7;color:#8a5a12;border-color:#e6cfa0}
+  :root[data-theme="light"] .chip.bad{background:#f7dcd8;color:#a3271f;border-color:#e9b3ac}
+  :root[data-theme="light"] .chip.ok{background:#dff0e4;color:#1c7a45;border-color:#b6ddc2}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--serif);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding-bottom:calc(78px + env(safe-area-inset-bottom))}
+  .barlow{font-family:var(--serif);font-weight:700}
+  .wrap{max-width:680px;margin:0 auto;padding:0 16px}
+  header.top{position:sticky;top:0;z-index:40;background:var(--topbar-bg);color:var(--ink);padding:calc(env(safe-area-inset-top) + 10px) 0 10px;box-shadow:0 1px 0 var(--line),0 3px 16px rgba(0,0,0,.42)}
+  .top .wrap{display:flex;align-items:center;gap:10px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700}
+  .brand .logo{width:30px;height:30px;border-radius:8px;background:var(--accent);display:grid;place-items:center}
+  .brand .logo svg{width:18px;height:18px;color:#fff}
+  .brand b{font-family:var(--serif);font-size:23px;letter-spacing:.3px;line-height:1;font-weight:700}
+  .brand small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--ink2);font-weight:400;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+  .top .spacer{flex:1}
+  .iconbtn{background:transparent;border:1px solid var(--line);color:var(--ink);width:38px;height:38px;border-radius:10px;font-size:18px;cursor:pointer;display:grid;place-items:center}
+  .iconbtn:active{transform:scale(.95)}
+  .showbar{background:var(--showbar-bg);border-top:1px solid var(--line)}
+  .showbar .wrap{display:flex;align-items:center;gap:10px;padding-top:8px;padding-bottom:8px}
+  .showchip{flex:1;display:flex;align-items:center;gap:10px;background:var(--chip-bg);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:600}
+  .showchip .ji{width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center;flex:0 0 26px}
+  .showchip .ji svg{width:15px;height:15px;color:#fff}
+  .showchip .nm{font-size:16px;font-family:var(--serif);line-height:1.1}
+  .showchip .sub{font-family:var(--mono);font-size:10px;color:var(--ink2);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+  .showchip .car{margin-left:auto;color:var(--ink2)}
+  main{padding-top:16px;min-height:60vh}
+  h2.section{font-family:var(--serif);font-size:27px;margin:6px 0 12px;letter-spacing:0;font-weight:700;color:var(--ink)}
+  h2.section.sm{font-size:19px}
+  .muted{color:var(--ink2)}
+  .row{display:flex;gap:10px;align-items:center}
+  .between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .unit{display:flex;gap:0;margin-bottom:11px;overflow:hidden;cursor:pointer}
+  .unit .stripe{width:8px;flex:0 0 8px}
+  .unit .body{flex:1;padding:12px 14px;min-width:0}
+  .unit .body .l1{display:flex;align-items:center;gap:8px}
+  .unit .tag{font-family:var(--serif);font-size:20px;font-weight:700;letter-spacing:.3px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .uloc{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);margin-top:5px}
+  .uloc svg{width:15px;height:15px;flex:0 0 15px}
+  .uloc.bad{color:var(--red)} .uloc.transit{color:var(--blue)}
+  .pill{font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;color:#fff;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px}
+  .fuel{display:flex;align-items:center;gap:9px;margin-top:10px}
+  .fuel .fl{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--ink2)}
+  .fuel .track{flex:1;height:7px;border-radius:6px;background:var(--surface2);overflow:hidden}
+  .fuel .fill{height:100%;border-radius:6px}
+  .fuel .pct{font-family:var(--mono);font-size:12px;font-weight:700;min-width:38px;text-align:right}
+  .chip{font-family:var(--mono);font-size:10.5px;font-weight:400;padding:3px 8px;border-radius:8px;background:var(--chip-bg);color:var(--chip-ink);border:1px solid var(--line);white-space:nowrap}
+  .chip.warn{background:#33271a;color:#e6ab5c;border-color:#5a4327}
+  .chip.bad{background:#331e1b;color:#ec8a7e;border-color:#5a2f2a}
+  .chip.ok{background:#1e2a22;color:#79c79b;border-color:#2f4a3a}
+  .metaline{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;align-items:center}
+  .fresh{font-family:var(--mono);font-size:11px;color:var(--ink2);display:flex;align-items:center;gap:5px}
+  .fresh.stale{color:var(--orange)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:12px;padding:13px 16px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--mono);letter-spacing:.3px;background:var(--surface2);color:var(--ink)}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:17px;height:17px}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.dark{background:var(--btn-dark-bg);color:var(--btn-dark-ink)}
+  .btn.ghost{background:transparent;border:1.5px solid var(--line);color:var(--ink)}
+  .btn.danger{background:var(--red);color:#fff}
+  .btn.sm{padding:9px 12px;font-size:12px;border-radius:10px}
+  .btn.block{width:100%}
+  .btn.wide{flex:1}
+  .fab-scan{position:fixed;right:18px;bottom:calc(86px + env(safe-area-inset-bottom));z-index:45;width:58px;height:58px;border-radius:50%;background:var(--accent);color:#fff;border:none;cursor:pointer;display:grid;place-items:center;box-shadow:0 8px 20px rgba(199,116,85,.5)}
+  .fab-scan svg{width:26px;height:26px}
+  .fab-scan span{position:absolute;bottom:-16px;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--accent)}
+  nav.bottom{position:fixed;bottom:0;left:0;right:0;z-index:44;background:var(--topbar-bg);border-top:1px solid var(--line);box-shadow:0 -2px 16px rgba(0,0,0,.42);padding-bottom:env(safe-area-inset-bottom)}
+  nav.bottom .inner{max-width:680px;margin:0 auto;display:flex}
+  nav.bottom button{flex:1;background:none;border:none;padding:10px 2px 9px;cursor:pointer;color:var(--ink2);font-size:9.5px;font-weight:700;font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
+  nav.bottom button svg{width:23px;height:23px}
+  nav.bottom button.active{color:var(--accent)}
+  .navbadge{position:absolute;top:4px;left:calc(50% + 8px);min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1}
+  .navbadge.on{display:flex}
+  label.fld{display:block;margin:0 0 12px}
+  label.fld .lb{display:block;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  input,select,textarea{width:100%;font-family:var(--mono);font-size:16px;padding:12px 13px;border:1.5px solid var(--line);border-radius:11px;background:var(--input-bg);color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical;min-height:70px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .searchbar{display:flex;align-items:center;gap:9px;background:var(--input-bg);border:1.5px solid var(--line);border-radius:11px;padding:0 12px;margin-bottom:12px}
+  .searchbar svg{width:17px;height:17px;color:var(--ink2);flex:0 0 17px}
+  .searchbar input{border:none;background:none;padding:11px 0}
+  .filterbar{display:flex;gap:7px;margin-bottom:13px;overflow:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .fchip{white-space:nowrap;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink2);padding:7px 13px;border-radius:999px;font-weight:700;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
+  .fchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .fchip.on.down{background:var(--red);border-color:var(--red)}
+  .overlay{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.62);display:none;align-items:flex-end;justify-content:center}
+  .overlay.on{display:flex}
+  .sheet{background:var(--bg);width:100%;max-width:680px;max-height:94vh;overflow:auto;border-radius:20px 20px 0 0;padding:0 0 24px;border-top:1px solid var(--line)}
+  .sheet .sh-top{position:sticky;top:0;background:var(--bg);padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);z-index:2}
+  .sheet .sh-top h3{margin:0;font-family:var(--serif);font-size:23px;letter-spacing:.2px;flex:1;font-weight:700}
+  .sheet .sh-body{padding:16px}
+  .closex{background:var(--surface2);border:1px solid var(--line);width:34px;height:34px;border-radius:9px;font-size:18px;cursor:pointer;color:var(--ink2)}
+  .stathead{border-radius:var(--radius);padding:16px;color:#fff;box-shadow:var(--shadow)}
+  .stathead .big{font-family:var(--serif);font-size:31px;font-weight:700;line-height:1}
+  .stathead .sub{opacity:.95;font-size:13px;margin-top:4px;font-family:var(--mono)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
+  .kv .k{color:var(--ink2);font-weight:400;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .sub-tabs{display:flex;gap:6px;margin:14px 0 4px;overflow:auto;-webkit-overflow-scrolling:touch}
+  .sub-tabs button{white-space:nowrap;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink2);padding:8px 13px;border-radius:999px;font-weight:700;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
+  .sub-tabs button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .empty{text-align:center;padding:40px 16px;color:var(--ink2)}
+  .empty .em{font-size:40px;margin-bottom:10px}
+  .listitem{padding:12px 14px;border-bottom:1px solid var(--line)}
+  .listitem:last-child{border-bottom:none}
+  .banner{background:var(--banner-bg);border:1px solid var(--banner-line);color:var(--banner-ink);border-radius:12px;padding:11px 13px;font-size:13px;margin-bottom:14px;line-height:1.45}
+  .segwrap{display:flex;gap:0;border:1.5px solid var(--line);border-radius:11px;overflow:hidden;background:var(--surface2)}
+  .segwrap button{flex:1;border:none;background:var(--surface2);padding:11px 6px;font-weight:700;font-size:12px;cursor:pointer;color:var(--ink2);font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px}
+  .segwrap button.on{color:#fff}
+  #reader{width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:250px}
+  .qrbox{display:grid;place-items:center;padding:14px;background:#fff;border-radius:12px}
+  #map{height:62vh;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--surface2)}
+  .jobrow{cursor:pointer;padding:15px;margin-bottom:11px}
+  .jobrow .jt{font-family:var(--serif);font-size:21px;font-weight:700}
+  .jobrow .jsub{font-family:var(--mono);font-size:11px;color:var(--ink2);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+  .hbar{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+  .hchip{font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px;display:flex;align-items:center;gap:6px;background:var(--surface2);color:var(--ink2)}
+  .hchip .dot{width:8px;height:8px;border-radius:50%}
+  .hchip.alarm{background:#331e1b;color:#ec8a7e}
+  .hchip.warnh{background:#33271a;color:#e6ab5c}
+  .backbtn{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--ink2);font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:1px;cursor:pointer;padding:0;margin-bottom:8px}
+  .backbtn svg{width:16px;height:16px}
+  .checkrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .checkrow input[type=checkbox]{width:22px;height:22px}
+  .toast{position:fixed;bottom:calc(96px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--surface2);color:var(--ink);padding:12px 18px;border-radius:12px;font-weight:600;font-size:14px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center;border:1px solid var(--line);font-family:var(--mono)}
+  .toast.on{opacity:1}
+  a{color:var(--accent)}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  hr.sep{border:none;border-top:1px solid var(--line);margin:16px 0}
+  .photostrip{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+  .photostrip .ph{position:relative;width:66px;height:66px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+  .photostrip img{width:100%;height:100%;object-fit:cover;cursor:pointer;display:block}
+  .photostrip .rm{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;line-height:1;cursor:pointer;padding:0}
+  #photoOverlay{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:20px}
+  #photoOverlay.on{display:flex}
+  #photoOverlay img{max-width:96%;max-height:92%;border-radius:12px}
+  .evrow{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .evrow .ei{width:30px;height:30px;border-radius:8px;background:var(--surface2);display:grid;place-items:center;flex:0 0 30px}
+  .evrow .ei svg{width:16px;height:16px;color:var(--ink2)}
+  .evrow .et{flex:1;min-width:0}
+  .evrow .ett{font-size:14px} .evrow .etm{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:2px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><div class="logo" id="logoIc"></div><div><b>FLEETVIEW</b><small>Generator Tracker</small></div></div>
+    <div class="spacer"></div>
+    <button class="iconbtn" onclick="toggleTheme()" title="Daylight / dark" id="themeBtn">☀️</button>
+    <button class="iconbtn" onclick="openMore()" title="More">☰</button>
+    <button class="iconbtn" onclick="openSettings()" title="Settings">⚙️</button>
+  </div>
+</header>
+<div class="showbar">
+  <div class="wrap">
+    <div class="showchip" onclick="go('jobs')">
+      <div class="ji" id="jobIc"></div>
+      <div><div class="nm" id="showName">—</div><div class="sub" id="showSub"></div></div>
+      <div class="car">▸</div>
+    </div>
+  </div>
+</div>
+
+<main><div class="wrap" id="view"></div></main>
+
+<button class="fab-scan" onclick="go('scan')" id="fabScan" aria-label="Scan"></button>
+
+<nav class="bottom"><div class="inner" id="navInner"></div></nav>
+
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" id="sheet"><div class="sh-body">…</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="photoOverlay" onclick="this.classList.remove('on')"><img id="photoBig" alt=""/></div>
+
+<script>
+/* ===== ICONS ===== */
+const IC={
+  bolt:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+  jobs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  fleet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  map:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5.5v15L9 18l6 3 6-2.5v-15L15 6 9 3z"/><path d="M9 3v15M15 6v15"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+  scan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M4 12h16"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z"/><circle cx="7.5" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v5M12 17.6v.1"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  wrench:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.2 5.2L3 18l3 3 6.5-6.5a4 4 0 0 0 5.2-5.2l-2.4 2.4-2.6-.6-.6-2.6 2.4-2.4z"/></svg>',
+  log:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v18M12 8h5M12 12h5M12 16h3"/></svg>',
+  report:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6l12 5V4L3 9z"/><path d="M15 8a4 4 0 0 1 0 8"/><path d="M6 15v3a1.5 1.5 0 0 0 3 0v-1.4"/></svg>'
+};
+/* ===== STORAGE ===== */
+const KEY='fleetview_v2';let mem=null;
+function blankState(){return{settings:{techName:'',warnHours:20,staleHours:6,theme:'dark',homeTab:'jobs',svcEmail:'',jobIcon:'jobs'},
+  shops:[{id:'shop_nj',name:'New Jersey Shop'},{id:'shop_indio',name:'Indio Shop'},{id:'shop_orl',name:'Orlando Shop'}],
+  shows:[],units:[],reports:[],issues:[],movements:[],currentShowId:null};}
+function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return mem||blankState();}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){mem=S;}}
+let S=load();let STORAGE_OK=true;try{localStorage.setItem('__t','1');localStorage.removeItem('__t');}catch(e){STORAGE_OK=false;mem=S;}
+if(!S.settings.jobIcon)S.settings.jobIcon='jobs';
+/* ===== HELPERS ===== */
+const $=(s,r=document)=>r.querySelector(s);
+const uid=(p='id')=>p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const now=()=>Date.now();
+const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=(v)=>{const n=parseFloat(v);return isNaN(n)?null:n;};
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2200);}
+function fmtAgo(ts){if(!ts)return 'never';const s=(now()-ts)/1000;if(s<60)return 'just now';const m=s/60;if(m<60)return Math.round(m)+'m ago';const h=m/60;if(h<24)return Math.round(h)+'h ago';return Math.round(h/24)+'d ago';}
+function fmtDate(ts){if(!ts)return '';return new Date(ts).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function currentShow(){return S.shows.find(x=>x.id===S.currentShowId)||null;}
+function showById(id){return S.shows.find(x=>x.id===id)||null;}
+function locName(type,id){if(type==='show'){const s=showById(id);return s?s.name:'Show';}if(type==='shop'){const s=S.shops.find(x=>x.id===id);return s?s.name:'Shop';}return '—';}
+function unitByTag(tag){const t=String(tag).trim().toLowerCase();return S.units.find(u=>String(u.tagId).trim().toLowerCase()===t);}
+function unitById(id){return S.units.find(u=>u.id===id);}
+function unitsOnShow(id){return S.units.filter(u=>u.locationType==='show'&&u.locationId===id);}
+function incomingToShow(id){return S.units.filter(u=>u.locationType==='transit'&&u.inTransitToShowId===id);}
+function reportsFor(id){return S.reports.filter(r=>r.unitId===id).sort((a,b)=>b.timestamp-a.timestamp);}
+function issuesFor(id){return S.issues.filter(i=>i.unitId===id).sort((a,b)=>b.timestamp-a.timestamp);}
+function openIssuesFor(id){return issuesFor(id).filter(i=>!i.resolved);}
+function lastReport(id){return reportsFor(id)[0]||null;}
+function latestFuel(u){const r=reportsFor(u.id).find(r=>r.fuelLevelPct!=null);return r?r.fuelLevelPct:null;}
+function lastCheckTs(u){const r=lastReport(u.id);return r?r.timestamp:null;}
+function isStale(u){if(u.opStatus==='down')return false;const t=lastCheckTs(u);const h=(S.settings.staleHours||6)*3600e3;return !t||(now()-t)>h;}
+function unitGps(u){let best=null;[...S.movements.filter(m=>m.unitId===u.id),...reportsFor(u.id),...issuesFor(u.id)].forEach(e=>{if(e.gps&&(!best||e.timestamp>best.ts))best={ts:e.timestamp,g:e.gps};});return best?best.g:null;}
+function dayOfShow(s){if(!s||!s.startDate)return null;const a=new Date(s.startDate);a.setHours(0,0,0,0);const b=new Date();b.setHours(0,0,0,0);const d=Math.floor((b-a)/86400000)+1;return d>=1?d:null;}
+function requireTech(cb){if(S.settings.techName){cb();return;}
+  sheet('Who are you?',`<p class="muted" style="margin-top:0">Your name gets stamped on every check, issue, and scan.</p><label class="fld"><span class="lb">Your name</span><input id="techIn" placeholder="e.g. Mike R."/></label><button class="btn primary block" onclick="saveTech()">Save & continue</button>`);
+  setTimeout(()=>{$('#techIn')&&$('#techIn').focus();},200);pendingTechCb=cb;}
+let pendingTechCb=null;
+function saveTech(){const v=$('#techIn').value.trim();if(!v){toast('Enter your name');return;}S.settings.techName=v;save();closeSheet();if(pendingTechCb){const cb=pendingTechCb;pendingTechCb=null;cb();}}
+/* ===== STATUS ===== */
+function serviceState(u){if(u.serviceDueHours==null||u.currentHours==null)return{state:'unknown',remaining:null};const rem=Math.round((u.serviceDueHours-u.currentHours)*10)/10;if(rem<=0)return{state:'over',remaining:rem};if(rem<=(S.settings.warnHours||20))return{state:'soon',remaining:rem};return{state:'ok',remaining:rem};}
+const SC={green:'var(--green)',yellow:'var(--yellow)',orange:'var(--orange)',red:'var(--red)',grey:'var(--grey)',blue:'var(--blue)'};
+function computeStatus(u){
+  const reasons=[];const oi=openIssuesFor(u.id);const sv=serviceState(u);const fuel=latestFuel(u);
+  const down=u.opStatus==='down'||oi.some(i=>i.severity==='down');
+  const maint=u.opStatus==='maintenance'||oi.some(i=>i.severity==='maintenance');
+  const cosm=oi.some(i=>i.severity==='cosmetic');
+  const low=fuel!=null&&fuel<20;
+  if(sv.state==='over')reasons.push({t:'Over service '+Math.abs(sv.remaining)+'h',cls:'bad'});
+  else if(sv.state==='soon')reasons.push({t:sv.remaining+'h to service',cls:'warn'});
+  if(low)reasons.push({t:'Fuel '+fuel+'%',cls:'warn'});
+  oi.forEach(i=>reasons.push({t:(i.title||i.severity),cls:i.severity==='cosmetic'?'warn':'bad'}));
+  if(down)return{color:'red',label:'DOWN',reasons};
+  if(sv.state==='over')return{color:'orange',label:'OVER SERVICE',reasons};
+  if(maint)return{color:'orange',label:'NEEDS SERVICE',reasons};
+  if(low)return{color:'orange',label:'LOW FUEL',reasons};
+  if(sv.state==='soon')return{color:'orange',label:'SERVICE SOON',reasons};
+  if(cosm)return{color:'yellow',label:'COSMETIC',reasons};
+  if(u.locationType==='transit')return{color:'blue',label:'IN TRANSIT',reasons};
+  if(u.opStatus==='running')return{color:'green',label:'RUNNING',reasons};
+  return{color:'grey',label:'STAGED',reasons};
+}
+function needsAttention(u){const c=computeStatus(u).color;return c==='red'||c==='orange'||isStale(u);}
+/* ===== JOB HEALTH ===== */
+function jobHealth(s){const us=unitsOnShow(s.id);let down=0,overdue=0,last=0;us.forEach(u=>{if(computeStatus(u).color==='red')down++;if(isStale(u))overdue++;});
+  [...S.reports,...S.issues,...S.movements].forEach(e=>{const u=unitById(e.unitId);if(u&&u.locationType==='show'&&u.locationId===s.id&&e.timestamp>last)last=e.timestamp;});
+  return{units:us.length,down,overdue,last};}
+/* ===== ROUTER ===== */
+let TAB='jobs',jobView=null;
+const NAV=[['jobs','Jobs','jobs'],['fleet','Fleet','fleet'],['map','Map','map'],['alerts','Alerts','bell']];
+function buildNav(){$('#navInner').innerHTML=NAV.map(([k,l,ic])=>`<button data-nav="${k}" onclick="go('${k}')">${IC[ic]}${k==='alerts'?'<span class="navbadge" id="alertBadge"></span>':''}<span>${l}</span></button>`).join('');}
+function setActiveNav(t){document.querySelectorAll('nav.bottom button[data-nav]').forEach(b=>b.classList.toggle('active',b.dataset.nav===t));}
+function go(tab){if(tab==='scan'){openScan();return;}TAB=tab;if(tab==='jobs')jobView=null;setActiveNav(tab);window.scrollTo(0,0);render();}
+function openJob(id){S.currentShowId=id;save();TAB='jobs';jobView=id;setActiveNav('jobs');window.scrollTo(0,0);render();}
+function render(){applyTheme();refreshTopBar();updateBadge();const v=$('#view');
+  if(TAB==='jobs')v.innerHTML=jobView?renderJobDetail(jobView):renderJobsList();
+  else if(TAB==='fleet')v.innerHTML=renderFleet();
+  else if(TAB==='map'){v.innerHTML=renderMapScreen();var _sc=(mapScope==='all'||!currentShow())?null:S.currentShowId;setTimeout(()=>drawMap(_sc),60);}
+  else if(TAB==='alerts')v.innerHTML=renderAlerts();
+}
+function refreshTopBar(){const s=currentShow();$('#jobIc').innerHTML=IC[S.settings.jobIcon]||IC.jobs;
+  if(s){const d=dayOfShow(s);$('#showName').textContent=s.name;$('#showSub').textContent=(d?('Day '+d+' · '):'')+unitsOnShow(s.id).length+' units';}
+  else{$('#showName').textContent='Select a job';$('#showSub').textContent=S.shows.length+' jobs';}}
+function updateBadge(){const n=S.units.filter(u=>u.locationType==='show'&&needsAttention(u)).length;const b=$('#alertBadge');if(b){b.textContent=n;b.classList.toggle('on',n>0);}}
+/* ===== CARDS ===== */
+function statusPill(cs){return `<span class="pill" style="background:${SC[cs.color]}${cs.color==='yellow'?';color:#4a3a00':''}">${cs.label}</span>`;}
+function fuelBar(u){const f=latestFuel(u);if(f==null)return '';const c=f<20?'var(--red)':(f<50?'var(--orange)':'var(--green)');
+  return `<div class="fuel"><span class="fl">FUEL</span><span class="track"><span class="fill" style="width:${Math.max(3,Math.min(100,f))}%;background:${c}"></span></span><span class="pct" style="color:${c}">${f}%</span></div>`;}
+function unitCard(u){
+  const cs=computeStatus(u);const model=[u.make,u.model].filter(Boolean).join(' ')||u.klass==='big'?'Power Only':'Generator';
+  const title=(u.model||u.make||'GEN')+' · #'+(u.tagId||u.serial||'—');
+  let line2;const oi=openIssuesFor(u.id);
+  if(cs.color==='red'&&oi.length)line2=`<div class="uloc bad">${IC.warn}<span>${esc(u.area||locName(u.locationType,u.locationId))} · ${esc(oi[0].title||oi[0].text||'down')}${oi[0].photos&&oi[0].photos.length?(' · '+oi[0].photos.length+' 📷'):''}</span></div>`;
+  else if(u.locationType==='transit')line2=`<div class="uloc transit">${IC.truck}<span>${esc(u.trailer?('Trailer '+u.trailer):'In transit')} → ${esc(locName('show',u.inTransitToShowId))}</span></div>`;
+  else line2=`<div class="uloc">${IC.pin}<span>${esc(u.area||locName(u.locationType,u.locationId))}${u.locNote?(' · '+esc(u.locNote)):''}</span></div>`;
+  const stale=isStale(u);const np=(u.photos?u.photos.length:0)+oi.reduce((n,i)=>n+((i.photos&&i.photos.length)||0),0);
+  return `<div class="card unit" onclick="openUnit('${u.id}')"><div class="stripe" style="background:${SC[cs.color]}"></div><div class="body">
+    <div class="l1"><span class="tag">${esc(title)}</span>${statusPill(cs)}</div>
+    ${line2}${fuelBar(u)}
+    <div class="metaline">${np?'<span class="chip">📷 '+np+'</span>':''}<span class="fresh ${stale?'stale':''}">${stale?IC.warn:''}⏱ ${fmtAgo(lastCheckTs(u))}${lastReport(u.id)?(' · '+esc(lastReport(u.id).techName||'')):''}</span></div>
+  </div></div>`;
+}
+/* ===== FILTERS ===== */
+function passFilter(u,f){if(f==='all')return true;if(f==='big')return u.klass==='big';if(f==='small')return u.klass!=='big';if(f==='down')return computeStatus(u).color==='red';if(f==='lowfuel'){const x=latestFuel(u);return x!=null&&x<20;}if(f==='service'){const s=serviceState(u).state;return s==='over'||s==='soon';}return true;}
+function filterBar(cur,fn){const F=[['all','All'],['big','Big iron'],['small','Small iron'],['down','Down'],['lowfuel','Low fuel'],['service','Service due']];
+  return `<div class="filterbar">${F.map(([k,l])=>`<button class="fchip ${cur===k?'on':''} ${k==='down'?'down':''}" onclick="${fn}('${k}')">${l}</button>`).join('')}</div>`;}
+function sortUnits(list){const o={red:0,orange:1,yellow:2,blue:3,grey:4,green:5};return list.sort((a,b)=>o[computeStatus(a).color]-o[computeStatus(b).color]);}
+/* ===== JOBS ===== */
+function renderJobsList(){
+  const rows=S.shows.map(s=>{const h=jobHealth(s);const d=dayOfShow(s);
+    return `<div class="card jobrow" onclick="openJob('${s.id}')"><div class="between"><div><div class="jt">${esc(s.name)}</div><div class="jsub">${esc(s.location||'')}${d?(' · Day '+d):''}</div></div><div class="car" style="color:var(--ink2)">▸</div></div>
+      <div class="hbar"><span class="hchip">${h.units} units</span>${h.down?`<span class="hchip alarm"><span class="dot" style="background:var(--red)"></span>${h.down} down</span>`:''}${h.overdue?`<span class="hchip warnh">⏱ ${h.overdue} overdue</span>`:''}${!h.down&&!h.overdue&&h.units?`<span class="hchip" style="color:var(--green)"><span class="dot" style="background:var(--green)"></span>all good</span>`:''}<span class="hchip">${h.last?('active '+fmtAgo(h.last)):'no activity'}</span></div></div>`;}).join('');
+  return `<div class="between"><h2 class="section" style="margin:0">Jobs</h2><button class="btn primary sm" onclick="editShow()">+ New</button></div>
+    <p class="muted" style="margin:6px 0 14px;font-size:13px">Tap a job to see its fleet and whether crews are checking on schedule.</p>
+    ${S.shows.length?rows:`<div class="empty"><div class="em">📋</div><p class="muted">No jobs yet. Create your first show.</p><button class="btn primary block" style="margin-top:12px" onclick="editShow()">+ Create a job</button></div>`}`;
+}
+let jobFilter='all',jobSearch='';
+function setJobFilter(f){jobFilter=f;render();}
+function renderJobDetail(id){const s=showById(id);if(!s){jobView=null;return renderJobsList();}
+  const h=jobHealth(s);const d=dayOfShow(s);
+  let list=unitsOnShow(id);const inc=incomingToShow(id);
+  if(jobSearch){const q=jobSearch.toLowerCase();list=list.filter(u=>[u.tagId,u.serial,u.make,u.model,u.area].some(x=>String(x||'').toLowerCase().includes(q)));}
+  list=sortUnits(list.filter(u=>passFilter(u,jobFilter)));
+  return `<button class="backbtn" onclick="go('jobs')">${IC.back} All jobs</button>
+    <div class="between"><h2 class="section" style="margin:0">${esc(s.name)}</h2></div>
+    <div class="hbar" style="margin:6px 0 12px"><span class="hchip">${esc(s.location||'')}${d?(' · Day '+d):''}</span>${h.down?`<span class="hchip alarm">${h.down} down</span>`:''}${h.overdue?`<span class="hchip warnh">${h.overdue} overdue</span>`:''}</div>
+    <div class="row" style="margin-bottom:12px"><button class="btn ghost wide sm" onclick="openJobMap('${id}')">${IC.map} Map</button><button class="btn ghost wide sm" onclick="openJobLog('${id}')">${IC.log} Log</button><button class="btn dark wide sm" onclick="openReport('${id}')">${IC.report} Report</button></div>
+    <div class="searchbar">${IC.search}<input placeholder="Search this job…" value="${esc(jobSearch)}" oninput="jobSearch=this.value;rerenderJob('${id}')"/></div>
+    ${filterBar(jobFilter,'setJobFilter')}
+    ${list.length?list.map(unitCard).join(''):`<div class="empty"><div class="em">${IC.scan}</div><p class="muted">No units match. Tap Scan to add one.</p></div>`}
+    ${inc.length?`<h2 class="section sm" style="margin-top:16px">Incoming (${inc.length})</h2>${inc.map(unitCard).join('')}`:''}`;
+}
+function rerenderJob(id){const v=$('#view');const sc=v.querySelector('.searchbar input');const pos=sc?sc.selectionStart:null;v.innerHTML=renderJobDetail(id);const ni=v.querySelector('.searchbar input');if(ni){ni.focus();if(pos!=null)try{ni.setSelectionRange(pos,pos);}catch(e){}}}
+/* ===== FLEET (global registry) ===== */
+let fleetFilter='all',fleetSearch='';
+function setFleetFilter(f){fleetFilter=f;render();}
+function whereIs(u){if(u.locationType==='transit')return 'En route → '+locName('show',u.inTransitToShowId);return locName(u.locationType,u.locationId);}
+function renderFleet(){let list=S.units.slice();
+  if(fleetSearch){const q=fleetSearch.toLowerCase();list=list.filter(u=>[u.tagId,u.serial,u.make,u.model].some(x=>String(x||'').toLowerCase().includes(q)));}
+  list=list.filter(u=>passFilter(u,fleetFilter)).sort((a,b)=>String(a.tagId||a.serial).localeCompare(String(b.tagId||b.serial)));
+  const rows=list.map(u=>{const cs=computeStatus(u);return `<div class="card" style="padding:12px 14px;margin-bottom:9px;cursor:pointer;border-left:5px solid ${SC[cs.color]}" onclick="openUnit('${u.id}')">
+    <div class="between"><div style="min-width:0"><div style="font-family:var(--serif);font-size:18px;font-weight:700">${esc((u.model||u.make||'GEN')+' · #'+(u.tagId||u.serial||'—'))}</div>
+    <div class="uloc" style="margin-top:3px">${IC.pin}<span>${esc(whereIs(u))}</span></div></div>${statusPill(cs)}</div></div>`;}).join('');
+  return `<div class="between"><h2 class="section" style="margin:0">Fleet</h2><span class="muted" style="font-family:var(--mono);font-size:12px">${S.units.length} assets</span></div>
+    <p class="muted" style="margin:6px 0 12px;font-size:13px">Every asset the company owns, wherever it is.</p>
+    <div class="searchbar">${IC.search}<input placeholder="Search all assets…" value="${esc(fleetSearch)}" oninput="fleetSearch=this.value;rerenderFleet()"/></div>
+    ${filterBar(fleetFilter,'setFleetFilter')}
+    ${list.length?rows:`<div class="empty"><div class="em">${IC.fleet}</div><p class="muted">No assets yet. Open a job and scan units in, or add one.</p></div>`}
+    <button class="btn ghost block" style="margin-top:6px" onclick="editUnit(null,'')">+ Add asset manually</button>`;
+}
+function rerenderFleet(){const v=$('#view');const sc=v.querySelector('.searchbar input');const pos=sc?sc.selectionStart:null;v.innerHTML=renderFleet();const ni=v.querySelector('.searchbar input');if(ni){ni.focus();if(pos!=null)try{ni.setSelectionRange(pos,pos);}catch(e){}}}
+/* ===== MAP ===== */
+let mapObj=null,mapScope='job';
+function statusHex(c){return {green:'#2fa96a',orange:'#e2823f',red:'#dc5142',yellow:'#e0b23f',grey:'#8a8175',blue:'#2f7bde'}[c]||'#c77455';}
+function renderMapScreen(){const s=currentShow();const toggle=s?`<div class="filterbar" style="margin-bottom:12px"><button class="fchip ${mapScope==='job'?'on':''}" onclick="mapScope='job';render()">This job</button><button class="fchip ${mapScope==='all'?'on':''}" onclick="mapScope='all';render()">All locations</button></div>`:'';return `<div class="between"><h2 class="section" style="margin:0">Map</h2>${s&&mapScope==='job'?`<span class="muted" style="font-family:var(--mono);font-size:11px">${esc(s.name)}</span>`:''}</div>${toggle}<div id="map"></div><p class="muted" id="mapNote" style="font-size:12px;margin-top:8px"></p>`;}
+function drawMap(scopeShowId){const el=$('#map');if(!el)return;const note=$('#mapNote');
+  let units=S.units.filter(u=>unitGps(u));if(scopeShowId)units=units.filter(u=>u.locationType==='show'&&u.locationId===scopeShowId);
+  const site=scopeShowId?((showById(scopeShowId)||{}).site):null;
+  if(typeof L==='undefined'){el.innerHTML='<div class="empty" style="padding:40px"><p class="muted">Map library did not load.</p></div>';if(note)note.textContent='';return;}
+  if(!units.length&&!site){el.innerHTML='<div class="empty" style="padding:40px"><div class="em">'+IC.pin+'</div><p class="muted">No location yet. Set a venue on the job (open the job, Edit), or add/scan units on site with location allowed — each drops a pin.</p></div>';if(note)note.textContent='';return;}
+  try{if(mapObj){mapObj.remove();mapObj=null;}
+    mapObj=L.map(el,{attributionControl:false});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapObj);
+    const pts=[];
+    if(site){L.circleMarker([site.lat,site.lng],{radius:11,color:'#fff',weight:3,fillColor:'#c77455',fillOpacity:.9}).addTo(mapObj).bindPopup('<b>Venue</b>');pts.push([site.lat,site.lng]);}
+    units.forEach(u=>{const g=unitGps(u);const m=L.circleMarker([g.lat,g.lng],{radius:9,color:'#fff',weight:2,fillColor:statusHex(computeStatus(u).color),fillOpacity:1}).addTo(mapObj);
+      m.bindPopup('<b>'+esc((u.model||'')+' #'+(u.tagId||u.serial))+'</b><br>'+esc(computeStatus(u).label));m.on('click',()=>openUnit(u.id));pts.push([g.lat,g.lng]);});
+    if(units.length)mapObj.fitBounds(pts,{padding:[40,40],maxZoom:16});
+    else mapObj.setView([site.lat,site.lng],site.zoom||15);
+    if(note)note.textContent=(units.length?(units.length+' unit(s) plotted. '):(site?'Centered on the venue — pins appear as you add/check units on site. ':''))+'If tiles are blank, open the published link directly on your phone.';
+  }catch(e){el.innerHTML='<div class="empty" style="padding:40px"><p class="muted">Map did not render here. It works when opened directly on a phone.</p></div>';}
+}
+function openJobMap(id){sheet('Site map',`<div id="map" style="height:70vh"></div>`,()=>{if(mapObj){mapObj.remove();mapObj=null;}},true);setTimeout(()=>drawMap(id),80);}
+/* ===== ALERTS ===== */
+function renderAlerts(){const on=S.units.filter(u=>u.locationType==='show');
+  const down=on.filter(u=>computeStatus(u).color==='red');
+  const svc=on.filter(u=>{const s=serviceState(u).state;return s==='over'||s==='soon';});
+  const low=on.filter(u=>{const f=latestFuel(u);return f!=null&&f<20;});
+  const stale=on.filter(u=>isStale(u));
+  const sec=(title,arr,ic,color)=>arr.length?`<h2 class="section sm" style="margin-top:16px;color:${color||'var(--ink)'}">${title} (${arr.length})</h2>${arr.map(unitCard).join('')}`:'';
+  const total=new Set([...down,...svc,...low,...stale].map(u=>u.id)).size;
+  return `<div class="between"><h2 class="section" style="margin:0">Alerts</h2><button class="btn dark sm" onclick="openReport(S.currentShowId)">Report</button></div>
+    <p class="muted" style="margin:6px 0 4px;font-size:13px">${total?(total+' unit(s) across all jobs need attention.'):'Everything looks good across all jobs. 🎉'}</p>
+    ${sec('Hard down',down,'',SC.red? 'var(--red)':'')}
+    ${sec('Service due / over',svc,'','var(--orange)')}
+    ${sec('Low fuel',low,'','var(--orange)')}
+    ${sec('Overdue for a check',stale,'','var(--orange)')}`;
+}
+/* ===== LOG ===== */
+function eventsForShow(id){const on=new Set(unitsOnShow(id).map(u=>u.id));const ev=[];
+  S.reports.forEach(r=>{if(on.has(r.unitId)||r.showId===id)ev.push({t:r.timestamp,kind:'check',who:r.techName,uid:r.unitId,txt:'Vitals check'});});
+  S.issues.forEach(i=>{if(on.has(i.unitId)||i.showId===id)ev.push({t:i.timestamp,kind:'issue',who:i.techName,uid:i.unitId,txt:(i.severity==='down'?'DOWN':i.severity==='maintenance'?'Service issue':'Cosmetic')+': '+(i.title||i.text||'')});});
+  S.movements.forEach(m=>{if(m.toId===id||on.has(m.unitId))ev.push({t:m.timestamp,kind:'move',who:m.techName,uid:m.unitId,txt:(m.fromType?locName(m.fromType,m.fromId):'New')+' → '+(m.toType==='transit'?'en route':locName(m.toType,m.toId))});});
+  return ev.sort((a,b)=>b.t-a.t);}
+function openJobLog(id){const ev=eventsForShow(id);const ki={check:IC.check,issue:IC.warn,move:IC.truck};
+  sheet('Activity log',`<p class="muted" style="margin-top:0">Everything checked or touched on this job, newest first.</p>${ev.length?ev.map(e=>{const u=unitById(e.uid);return `<div class="evrow"><div class="ei">${ki[e.kind]||IC.check}</div><div class="et"><div class="ett">${esc(e.txt)} <b>#${esc(u?(u.tagId||u.serial):'?')}</b></div><div class="etm">${fmtDate(e.t)} · ${esc(e.who||'')}</div></div></div>`;}).join(''):'<div class="empty"><p class="muted">No activity yet.</p></div>'}`);}
+function openGlobalLog(){const ev=[];S.reports.forEach(r=>ev.push({t:r.timestamp,kind:'check',who:r.techName,uid:r.unitId,txt:'Vitals check'}));S.issues.forEach(i=>ev.push({t:i.timestamp,kind:'issue',who:i.techName,uid:i.unitId,txt:(i.title||i.severity)}));S.movements.forEach(m=>ev.push({t:m.timestamp,kind:'move',who:m.techName,uid:m.unitId,txt:(m.fromType?locName(m.fromType,m.fromId):'New')+' → '+(m.toType==='transit'?'en route':locName(m.toType,m.toId))}));ev.sort((a,b)=>b.t-a.t);const ki={check:IC.check,issue:IC.warn,move:IC.truck};
+  sheet('Global log',`${ev.length?ev.slice(0,200).map(e=>{const u=unitById(e.uid);return `<div class="evrow"><div class="ei">${ki[e.kind]}</div><div class="et"><div class="ett">${esc(e.txt)} <b>#${esc(u?(u.tagId||u.serial):'?')}</b></div><div class="etm">${fmtDate(e.t)} · ${esc(e.who||'')}</div></div></div>`;}).join(''):'<div class="empty"><p class="muted">No activity yet.</p></div>'}`);}
+/* ===== REPORT ===== */
+function buildReportText(id){const s=showById(id)||currentShow();if(!s)return 'No job selected.';const units=unitsOnShow(s.id);const L=[];
+  L.push('GENERATOR STATUS REPORT');L.push('Job: '+s.name+(s.location?(' — '+s.location):''));L.push('Date: '+new Date().toLocaleString());L.push('By: '+(S.settings.techName||'—'));L.push('Units: '+units.length);L.push('');
+  const grp=(t,arr)=>{if(!arr.length)return;L.push('== '+t+' ('+arr.length+') ==');arr.forEach(u=>{const cs=computeStatus(u);const sv=serviceState(u);L.push('• #'+(u.tagId||u.serial)+' ['+[u.make,u.model].filter(Boolean).join(' ')+']  '+cs.label+(u.currentHours!=null?(' | '+u.currentHours+'h'):'')+(sv.state!=='unknown'?(' | '+(sv.remaining<=0?('OVER '+Math.abs(sv.remaining)+'h'):(sv.remaining+'h to svc'))):''));openIssuesFor(u.id).forEach(i=>L.push('    - ['+i.severity+'] '+(i.title?i.title+' — ':'')+(i.text||'')));});L.push('');};
+  grp('HARD DOWN',units.filter(u=>computeStatus(u).color==='red'));grp('NEEDS / OVER SERVICE',units.filter(u=>computeStatus(u).color==='orange'));grp('COSMETIC',units.filter(u=>computeStatus(u).color==='yellow'));
+  const ok=units.filter(u=>['green','grey','blue'].includes(computeStatus(u).color));L.push('== RUNNING / OK ('+ok.length+') ==');L.push(ok.map(u=>'#'+(u.tagId||u.serial)).join(', ')||'(none)');
+  return L.join('\n');}
+function openReport(id){if(!id){toast('Open a job first');return;}
+  sheet('End-of-show report',`<label class="fld"><span class="lb">Service dept email</span><input id="svcEmail" placeholder="service@company.com" value="${esc(S.settings.svcEmail||'')}"/></label>
+    <textarea id="reportBox" style="min-height:240px;font-family:var(--mono);font-size:12.5px">${esc(buildReportText(id))}</textarea>
+    <div class="row" style="margin-top:12px"><button class="btn dark wide" onclick="copyReport()">Copy</button><button class="btn primary wide" onclick="emailReport('${id}')">Email</button></div>`);}
+function copyReport(){const t=$('#reportBox');t.select();try{navigator.clipboard.writeText(t.value);}catch(e){document.execCommand('copy');}toast('Copied');}
+function emailReport(id){const email=($('#svcEmail')&&$('#svcEmail').value.trim())||'';S.settings.svcEmail=email;save();const s=showById(id);location.href='mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('Generator Report — '+(s?s.name:'')+' — '+new Date().toLocaleDateString())+'&body='+encodeURIComponent($('#reportBox').value);}
+/* ===== SCAN ===== */
+let scanner=null;
+function openScan(){if(!currentShow()){toast('Open a job first');go('jobs');return;}
+  sheet('Scan generator',`<p class="muted" style="margin-top:0">Adding to <b>${esc(currentShow().name)}</b>.</p><button class="btn primary block" onclick="stopScanner();editUnit(null,'')">✎ Add a generator by hand</button><p class="muted" style="margin:12px 0 6px;text-align:center;font-size:12px">— or scan a QR sticker —</p><div id="reader"></div><div id="scanMsg" class="muted" style="text-align:center;margin:10px 0;font-size:13px"></div><hr class="sep"/><label class="fld"><span class="lb">Or type the code / serial</span><div class="row"><input id="manualCode" placeholder="e.g. GEN-00427"/><button class="btn dark" onclick="handleCode(document.getElementById('manualCode').value)">Go</button></div></label>`,stopScanner);
+  startScanner();captureGPS();}
+function startScanner(){const msg=$('#scanMsg');if(typeof Html5Qrcode==='undefined'){msg.innerHTML='Scanner didn\'t load — use the box below.';return;}
+  try{scanner=new Html5Qrcode("reader",{verbose:false});scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:240}},d=>{if(scanner)scanner.pause(true);handleCode(d);},()=>{}).catch(err=>{msg.innerHTML='Camera unavailable ('+esc(err&&err.name||'blocked')+'). Open the link directly on your phone, or type below.';});}catch(e){msg.innerHTML='Camera couldn\'t start. Type below.';}}
+function stopScanner(){if(scanner){try{scanner.stop().then(()=>{scanner.clear();scanner=null;}).catch(()=>{scanner=null;});}catch(e){scanner=null;}}}
+function handleCode(code){code=String(code||'').trim();if(!code){toast('Enter a code');return;}stopScanner();const ex=unitByTag(code);const s=currentShow();
+  if(ex){if(ex.locationType==='show'&&ex.locationId===s.id){closeSheet();openUnit(ex.id);toast('Already on this job');}
+    else{sheet('Move onto job?',`<div class="banner">📦 <b>#${esc(ex.tagId)}</b> is at <b>${esc(ex.locationType==='transit'?'in transit':locName(ex.locationType,ex.locationId))}</b>.</div><p>Move onto <b>${esc(s.name)}</b>?</p><button class="btn primary block" onclick="doMove('${ex.id}','show','${s.id}')">Move here</button><button class="btn ghost block" style="margin-top:10px" onclick="openUnit('${ex.id}')">Just open it</button>`);}}
+  else editUnit(null,code);}
+/* ===== GPS ===== */
+let lastGPS=null;
+function captureGPS(cb){if(!navigator.geolocation){if(cb)cb(null);return;}navigator.geolocation.getCurrentPosition(p=>{lastGPS={lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),acc:Math.round(p.coords.accuracy)};if(cb)cb(lastGPS);},()=>{if(cb)cb(null);},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});}
+function gpsLink(g){if(!g)return '';return `<a href="https://www.google.com/maps?q=${g.lat},${g.lng}" target="_blank" rel="noopener noreferrer">📍 ${g.lat}, ${g.lng} (±${g.acc}m)</a>`;}
+/* ===== PHOTOS ===== */
+let draftPhotos=[];
+function compressImage(file,cb){const rd=new FileReader();rd.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const max=1024;if(w>h&&w>max){h=Math.round(h*max/w);w=max;}else if(h>=w&&h>max){w=Math.round(w*max/h);h=max;}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);try{cb(c.toDataURL('image/jpeg',0.55));}catch(e){toast('Could not process image');}};img.onerror=()=>toast('Bad image');img.src=rd.result;};rd.readAsDataURL(file);}
+function persistOrWarn(undo){if(!STORAGE_OK){mem=S;return true;}try{localStorage.setItem(KEY,JSON.stringify(S));return true;}catch(e){if(undo)undo();toast('Storage full — remove some photos. Cloud photos come in Phase 2.');return false;}}
+function bigPhoto(src){$('#photoBig').src=src;$('#photoOverlay').classList.add('on');}
+function photoStrip(items,vp,rp){return `<div class="photostrip">${items.map((p,i)=>`<div class="ph"><img src="${p}" onclick="${vp}${i})"/>${rp?`<button class="rm" onclick="${rp}${i})">✕</button>`:''}</div>`).join('')}</div>`;}
+function renderDraftStrip(){return draftPhotos.length?photoStrip(draftPhotos,'bigDraftPhoto(','rmDraftPhoto('):'<p class="muted" style="font-size:12px;margin:2px 0 8px">No photos added.</p>';}
+function handleIssuePhoto(inp){const f=inp.files[0];if(!f)return;compressImage(f,d=>{draftPhotos.push(d);const el=$('#issuePhotoStrip');if(el)el.innerHTML=renderDraftStrip();});inp.value='';}
+function rmDraftPhoto(i){draftPhotos.splice(i,1);const el=$('#issuePhotoStrip');if(el)el.innerHTML=renderDraftStrip();}
+function bigDraftPhoto(i){bigPhoto(draftPhotos[i]);}
+function renderUnitPhotos(u){return photoStrip(u.photos||[],"bigUnitPhoto('"+u.id+"',","rmUnitPhoto('"+u.id+"',");}
+function handleUnitPhoto(inp,unitId){const f=inp.files[0];if(!f)return;compressImage(f,d=>{const u=unitById(unitId);if(!u.photos)u.photos=[];u.photos.push(d);if(!persistOrWarn(()=>u.photos.pop()))return;u.updatedAt=now();renderUnit(unitId);toast('Photo added');});inp.value='';}
+function rmUnitPhoto(unitId,i){const u=unitById(unitId);if(u&&u.photos)u.photos.splice(i,1);save();renderUnit(unitId);}
+function bigUnitPhoto(unitId,i){const u=unitById(unitId);if(u&&u.photos)bigPhoto(u.photos[i]);}
+function bigIssuePhoto(iid,i){const is=S.issues.find(x=>x.id===iid);if(is&&is.photos)bigPhoto(is.photos[i]);}
+/* ===== MOVEMENTS ===== */
+function doMove(unitId,type,id){const u=unitById(unitId);if(!u)return;requireTech(()=>{captureGPS(g=>{const from={type:u.locationType,id:u.locationId};u.locationType=type;u.locationId=id;u.inTransitToShowId=null;u.updatedAt=now();S.movements.push({id:uid('mv'),unitId,fromType:from.type,fromId:from.id,toType:type,toId:id,techName:S.settings.techName,timestamp:now(),gps:g||lastGPS});save();closeSheet();openUnit(unitId);toast('Moved to '+locName(type,id));});});}
+function shipTo(unitId){const u=unitById(unitId);if(!u)return;sheet('Mark en route',`<p class="muted" style="margin-top:0">Marks in transit until scanned in on arrival.</p><label class="fld"><span class="lb">Destination show</span><select id="shipTo">${S.shows.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label><button class="btn primary block" onclick="doShip('${unitId}')">Mark en route</button>`);}
+function doShip(unitId){const u=unitById(unitId);const dest=$('#shipTo').value;requireTech(()=>{captureGPS(g=>{const from={type:u.locationType,id:u.locationId};u.locationType='transit';u.inTransitToShowId=dest;u.locationId=null;u.updatedAt=now();S.movements.push({id:uid('mv'),unitId,fromType:from.type,fromId:from.id,toType:'transit',toId:dest,techName:S.settings.techName,timestamp:now(),gps:g});save();closeSheet();openUnit(unitId);toast('Marked en route');});});}
+function moveMenu(unitId){const shows=S.shows.map(s=>`<button class="btn ghost block" style="margin-bottom:8px" onclick="doMove('${unitId}','show','${s.id}')">${esc(s.name)}</button>`).join('');const shops=S.shops.map(s=>`<button class="btn ghost block" style="margin-bottom:8px" onclick="doMove('${unitId}','shop','${s.id}')">${esc(s.name)}</button>`).join('');sheet('Move / scan into…',`<div class="lb" style="margin-bottom:6px">JOBS</div>${shows||'<p class="muted">No jobs</p>'}<hr class="sep"/><div class="lb" style="margin-bottom:6px">SHOPS</div>${shops}`);}
+/* ===== UNIT DETAIL ===== */
+let detailTab='vitals';
+function openUnit(id){detailTab='vitals';renderUnit(id);}
+function renderUnit(id){const u=unitById(id);if(!u){closeSheet();return;}const cs=computeStatus(u);const sv=serviceState(u);
+  const loc=u.locationType==='transit'?('En route → '+locName('show',u.inTransitToShowId)):locName(u.locationType,u.locationId);
+  const head=`<div class="stathead" style="background:${SC[cs.color]}${cs.color==='yellow'?';color:#4a3a00':''}"><div class="big">#${esc(u.tagId||u.serial)}</div><div class="sub">${cs.label} · ${esc([u.make,u.model].filter(Boolean).join(' ')||'—')} · ${u.klass==='big'?'Big iron':'Small iron'}</div><div class="metaline" style="margin-top:10px">${cs.reasons.map(r=>`<span class="chip" style="background:rgba(255,255,255,.22);color:inherit;border:none">${esc(r.t)}</span>`).join('')}</div></div>`;
+  const quick=`<div class="row" style="margin:12px 0"><button class="btn primary wide" onclick="logVitals('${u.id}')">Log check</button><button class="btn danger wide" onclick="flagIssue('${u.id}')">Flag issue</button></div>`;
+  const tabs=`<div class="sub-tabs">${[['vitals','Vitals'],['issues','Issues ('+openIssuesFor(u.id).length+')'],['service','Service'],['info','Info'],['moves','Location']].map(([k,l])=>`<button class="${detailTab===k?'active':''}" onclick="detailTab='${k}';renderUnit('${u.id}')">${l}</button>`).join('')}</div>`;
+  let pane=detailTab==='vitals'?paneVitals(u):detailTab==='issues'?paneIssues(u):detailTab==='service'?paneService(u,sv):detailTab==='info'?paneInfo(u,loc):paneMoves(u,loc);
+  sheet('#'+(u.tagId||'Unit'),head+quick+tabs+`<div style="margin-top:12px">${pane}</div>`,stopScanner,true);
+  if(detailTab==='vitals')drawTrend(u);}
+function vk(k,v,uu){if(v==null||v==='')return '';return `<div class="k">${k}</div><div>${esc(v)}${uu}</div>`;}
+function paneVitals(u){const rs=reportsFor(u.id);const lr=rs[0];const g=lr&&lr.gps;
+  return `${rs.length?'<canvas id="trend" height="150" style="margin-bottom:8px"></canvas>':''}${lr?`<div class="card" style="padding:13px;margin-bottom:12px"><div class="between"><b>Latest check</b><span class="muted" style="font-size:12px">${fmtDate(lr.timestamp)} · ${esc(lr.techName||'')}</span></div><div class="kv" style="margin-top:9px">${vk('Volt L-L',lr.voltageLL,'V')}${vk('Volt L-N',lr.voltageLN,'V')}${vk('Amps L1',lr.ampsL1,'A')}${vk('Amps L2',lr.ampsL2,'A')}${vk('Amps L3',lr.ampsL3,'A')}${vk('Hz',lr.hz,'')}${vk('Load',lr.loadKw,'kW')}${vk('Load',lr.loadPct,'%')}${vk('Coolant',lr.coolantTemp,'°')}${vk('Oil T',lr.oilTemp,'°')}${vk('Oil P',lr.oilPressure,'psi')}${vk('Fuel',lr.fuelLevelPct,'%')}${vk('Batt',lr.batteryV,'V')}${vk('DEF',lr.defPct,'%')}${vk('Hrs',lr.engineHours,'')}</div>${lr.notes?`<div style="margin-top:8px;font-size:13px">📝 ${esc(lr.notes)}</div>`:''}${g?`<div style="margin-top:8px;font-size:13px">${gpsLink(g)}</div>`:''}</div>`:'<div class="empty" style="padding:22px"><p class="muted">No checks yet. Tap Log check.</p></div>'}${rs.length>1?`<h2 class="section sm">History</h2>${rs.slice(0,12).map(r=>`<div class="card" style="padding:10px 13px;margin-bottom:7px"><div class="between"><b style="font-size:13px">${fmtDate(r.timestamp)}</b><span class="muted" style="font-size:11px">${esc(r.techName||'')}</span></div><div class="muted" style="font-size:12px;margin-top:3px">${[r.voltageLL?('LL '+r.voltageLL+'V'):'',r.hz?(r.hz+'Hz'):'',r.loadKw?(r.loadKw+'kW'):'',r.coolantTemp?(r.coolantTemp+'°'):'',r.fuelLevelPct!=null?('fuel '+r.fuelLevelPct+'%'):''].filter(Boolean).join(' · ')}</div></div>`).join('')}`:''}`;}
+function drawTrend(u){const c=$('#trend');if(!c||typeof Chart==='undefined')return;const rs=reportsFor(u.id).slice().reverse();if(!rs.length)return;new Chart(c,{type:'line',data:{labels:rs.map(r=>fmtDate(r.timestamp)),datasets:[{label:'Coolant°',data:rs.map(r=>r.coolantTemp),borderColor:'#dc5142',tension:.3,spanGaps:true},{label:'Load%',data:rs.map(r=>r.loadPct),borderColor:'#6b93d6',tension:.3,spanGaps:true},{label:'Fuel%',data:rs.map(r=>r.fuelLevelPct),borderColor:'#4fae7a',tension:.3,spanGaps:true}]},options:{plugins:{legend:{labels:{boxWidth:12,font:{size:10},color:getComputedStyle(document.body).color}}},scales:{x:{ticks:{color:'#999',font:{size:9}}},y:{ticks:{color:'#999'}}},elements:{point:{radius:2}}}});}
+function paneIssues(u){const is=issuesFor(u.id);return is.length?is.map(i=>`<div class="card" style="padding:12px;margin-bottom:9px;border-left:5px solid ${i.severity==='down'?'var(--red)':i.severity==='maintenance'?'var(--orange)':'var(--yellow)'}"><div class="between"><b>${esc(i.title||i.severity)}</b><button class="btn sm ${i.resolved?'ghost':'dark'}" onclick="toggleIssue('${i.id}','${u.id}')">${i.resolved?'Reopen':'Resolve'}</button></div><div style="font-size:13px;margin-top:4px">${esc(i.text||'')}</div>${i.photos&&i.photos.length?photoStrip(i.photos,"bigIssuePhoto('"+i.id+"',",null):''}<div class="muted" style="font-size:11px;margin-top:6px">${i.resolved?'✓ resolved · ':''}${fmtDate(i.timestamp)} · ${esc(i.techName||'')}</div></div>`).join(''):'<div class="empty" style="padding:22px"><p class="muted">No issues. 🎉</p></div>';}
+function toggleIssue(iid,u_){const i=S.issues.find(x=>x.id===iid);if(i){i.resolved=!i.resolved;save();renderUnit(u_);}}
+function paneService(u,sv){const cls=sv.state==='over'?'bad':(sv.state==='soon'?'warn':'ok');return `<div class="card" style="padding:14px;margin-bottom:12px"><div class="between"><b>Service countdown</b>${sv.state!=='unknown'?`<span class="chip ${cls}" style="font-size:13px">${sv.remaining<=0?('OVER '+Math.abs(sv.remaining)+'h'):(sv.remaining+'h left')}</span>`:'<span class="chip">not set</span>'}</div><div class="kv" style="margin-top:10px"><div class="k">Current hrs</div><div>${u.currentHours??'—'}</div><div class="k">Service at</div><div>${u.serviceDueHours??'—'} h</div></div><div class="row" style="margin-top:12px"><button class="btn ghost wide" onclick="editService('${u.id}')">Edit hrs</button><button class="btn dark wide" onclick="markServiced('${u.id}')">Mark serviced</button></div></div>`;}
+function paneInfo(u,loc){return `<div class="card" style="padding:14px"><div class="kv"><div class="k">Tag/QR</div><div>${esc(u.tagId||'—')}</div><div class="k">Serial</div><div>${esc(u.serial||'—')}</div><div class="k">Type</div><div>${u.klass==='big'?'Big iron (Power Only)':'Small iron'}</div>${u.config?`<div class="k">Config</div><div>${esc(u.config)}</div>`:''}<div class="k">Make/Model</div><div>${esc([u.make,u.model].filter(Boolean).join(' ')||'—')}</div><div class="k">Power</div><div>${u.kw?esc(u.kw)+' kW':'—'}</div><div class="k">Breaker</div><div>${esc(u.breakerSize||'—')}</div><div class="k">Fuel</div><div>${esc(u.fuelType||'—')}${u.tankGallons?(' · '+esc(u.tankGallons)+' gal'):''}</div><div class="k">Weight</div><div>${u.weightLbs?Number(u.weightLbs).toLocaleString()+' lb':'—'}</div>${u.trailer?`<div class="k">Trailer</div><div>${esc(u.trailer)}</div>`:''}<div class="k">Area</div><div>${esc(u.area||'—')}</div><div class="k">Location</div><div>${esc(loc)}</div></div>${u.notes?`<div style="margin-top:10px;font-size:13px">📝 ${esc(u.notes)}</div>`:''}<div style="margin-top:12px"><div class="lb" style="margin-bottom:6px">PHOTOS</div>${(u.photos&&u.photos.length)?renderUnitPhotos(u):''}<input type="file" id="unitPhotoInput" accept="image/*" style="display:none" onchange="handleUnitPhoto(this,'${u.id}')"/><button type="button" class="btn ghost sm" onclick="document.getElementById('unitPhotoInput').click()">📷 Add photo</button></div><button class="btn ghost block" style="margin-top:14px" onclick="editUnit('${u.id}')">Edit info</button></div>`;}
+function paneMoves(u,loc){const mv=S.movements.filter(m=>m.unitId===u.id).sort((a,b)=>b.timestamp-a.timestamp);return `<div class="card" style="padding:14px;margin-bottom:12px"><div class="between"><b>Location</b><span class="pill" style="background:var(--blue)">${esc(loc)}</span></div><div class="row" style="margin-top:12px"><button class="btn dark wide" onclick="moveMenu('${u.id}')">Move / scan-in</button><button class="btn ghost wide" onclick="shipTo('${u.id}')">Mark en route</button></div></div><h2 class="section sm">History</h2>${mv.length?mv.map(m=>`<div class="card" style="padding:10px 13px;margin-bottom:7px"><div style="font-weight:600;font-size:14px">${esc(m.fromType?locName(m.fromType,m.fromId):'New')} → ${esc(m.toType==='transit'?('en route '+locName('show',m.toId)):locName(m.toType,m.toId))}</div><div class="muted" style="font-size:11px;margin-top:3px">${fmtDate(m.timestamp)} · ${esc(m.techName||'')}${m.gps?(' · '+gpsLink(m.gps)):''}</div></div>`).join(''):'<p class="muted">No movements.</p>'}`;}
+/* ===== FORMS ===== */
+let segType='small';
+function editUnit(id,prefillTag){const u=id?unitById(id):{};const isNew=!id;
+  const locOpts=[...S.shows.map(s=>`<option value="show:${s.id}" ${(currentShow()&&currentShow().id===s.id)?'selected':''}>${esc(s.name)}</option>`),...S.shops.map(s=>`<option value="shop:${s.id}">${esc(s.name)}</option>`)].join('');
+  sheet(isNew?'Add generator':'Edit generator',`${isNew&&prefillTag?`<div class="banner">🆕 New code <b>${esc(prefillTag)}</b> — fill in once; linked to this sticker forever.</div>`:''}
+    <label class="fld"><span class="lb">Type</span><div class="segwrap" id="t_seg"><button type="button" data-v="small" class="${(u.klass!=='big')?'on':''}" style="${u.klass!=='big'?'background:var(--accent);color:#fff':''}" onclick="tseg(this)">Small iron</button><button type="button" data-v="big" class="${u.klass==='big'?'on':''}" style="${u.klass==='big'?'background:var(--accent);color:#fff':''}" onclick="tseg(this)">Big iron</button></div></label>
+    <label class="fld"><span class="lb">Tag / QR / ID (optional)</span><input id="f_tag" value="${esc(u.tagId||prefillTag||'')}" placeholder="scan, type, or leave blank to auto-assign"/></label>
+    <div class="grid2"><label class="fld"><span class="lb">Serial #</span><input id="f_serial" value="${esc(u.serial||'')}"/></label><label class="fld"><span class="lb">Weight (lb)</span><input id="f_weight" type="number" value="${esc(u.weightLbs||'')}"/></label></div>
+    <div class="grid2"><label class="fld"><span class="lb">Make</span><input id="f_make" value="${esc(u.make||'')}" placeholder="Cat, Cummins"/></label><label class="fld"><span class="lb">Model</span><input id="f_model" value="${esc(u.model||'')}" placeholder="XQ125"/></label></div>
+    <div class="grid2"><label class="fld"><span class="lb">Power (kW)</span><input id="f_kw" type="number" value="${esc(u.kw||'')}"/></label><label class="fld"><span class="lb">Breaker</span><input id="f_breaker" value="${esc(u.breakerSize||'')}" placeholder="400A"/></label></div>
+    <div id="bigFields" style="display:${u.klass==='big'?'block':'none'}"><div class="grid2"><label class="fld"><span class="lb">Config</span><select id="f_config"><option value="">—</option>${['Single 300kW','Single 500kW','TwinPak','Double 500kW'].map(c=>`<option ${u.config===c?'selected':''}>${c}</option>`).join('')}</select></label><label class="fld"><span class="lb">Trailer #</span><input id="f_trailer" value="${esc(u.trailer||'')}"/></label></div></div>
+    <div class="grid2"><label class="fld"><span class="lb">Fuel type</span><input id="f_fuel" value="${esc(u.fuelType||'Diesel')}"/></label><label class="fld"><span class="lb">Tank (gal)</span><input id="f_tank" type="number" value="${esc(u.tankGallons||'')}"/></label></div>
+    <hr class="sep"/><div class="grid2"><label class="fld"><span class="lb">Current hrs</span><input id="f_hours" type="number" value="${esc(u.currentHours!=null?u.currentHours:'')}"/></label><label class="fld"><span class="lb">Service due at (hrs)</span><input id="f_svc" type="number" value="${esc(u.serviceDueHours!=null?u.serviceDueHours:'')}" placeholder="from sticker"/></label></div>
+    <label class="fld"><span class="lb">Area / zone</span><input id="f_area" value="${esc(u.area||'')}" placeholder="e.g. Main Stage"/></label>
+    ${isNew?`<label class="fld"><span class="lb">Location</span><select id="f_loc">${locOpts}</select></label>`:''}
+    <label class="fld"><span class="lb">Notes</span><textarea id="f_notes">${esc(u.notes||'')}</textarea></label>
+    <button class="btn primary block" onclick="saveUnit('${id||''}')">${isNew?'Add asset':'Save'}</button>${!isNew?`<button class="btn ghost block" style="margin-top:9px" onclick="confirmDeleteUnit('${id}')">Delete unit</button>`:''}`,stopScanner);
+  segType=u.klass==='big'?'big':'small';}
+function tseg(b){segType=b.dataset.v;document.querySelectorAll('#t_seg button').forEach(x=>{x.classList.remove('on');x.style.background='';x.style.color='';});b.classList.add('on');b.style.background='var(--accent)';b.style.color='#fff';const bf=$('#bigFields');if(bf)bf.style.display=segType==='big'?'block':'none';}
+function saveUnit(id){let tag=$('#f_tag').value.trim();if(!tag)tag=$('#f_serial').value.trim()||('GEN-'+now().toString(36).slice(-5).toUpperCase());const dup=unitByTag(tag);if(dup&&dup.id!==id){toast('That code/ID is already used');return;}
+  requireTech(()=>{let u=id?unitById(id):null;const isNew=!u;if(isNew){u={id:uid('gen'),createdAt:now(),opStatus:'staged'};S.units.push(u);}
+    u.tagId=tag;u.klass=segType;u.serial=$('#f_serial').value.trim();u.weightLbs=num($('#f_weight').value);u.make=$('#f_make').value.trim();u.model=$('#f_model').value.trim();u.kw=num($('#f_kw').value);u.breakerSize=$('#f_breaker').value.trim();
+    if(segType==='big'){u.config=$('#f_config')?$('#f_config').value:'';u.trailer=$('#f_trailer')?$('#f_trailer').value.trim():'';}
+    u.fuelType=$('#f_fuel').value.trim();u.tankGallons=num($('#f_tank').value);u.currentHours=num($('#f_hours').value);u.serviceDueHours=num($('#f_svc').value);u.area=$('#f_area').value.trim();u.notes=$('#f_notes').value.trim();u.updatedAt=now();
+    if(isNew){const lv=($('#f_loc')&&$('#f_loc').value)||('show:'+(S.currentShowId||''));const[lt,lid]=lv.split(':');u.locationType=lt;u.locationId=lid;captureGPS(g=>{S.movements.push({id:uid('mv'),unitId:u.id,fromType:null,fromId:null,toType:lt,toId:lid,techName:S.settings.techName,timestamp:now(),gps:g});save();closeSheet();openUnit(u.id);toast('Added');});}
+    else{save();closeSheet();openUnit(u.id);toast('Saved');}});}
+function confirmDeleteUnit(id){if(!confirm('Delete this unit and its logs?'))return;S.units=S.units.filter(u=>u.id!==id);S.reports=S.reports.filter(r=>r.unitId!==id);S.issues=S.issues.filter(i=>i.unitId!==id);S.movements=S.movements.filter(m=>m.unitId!==id);save();closeSheet();render();toast('Deleted');}
+let vsegVal='running';
+function logVitals(unitId){const u=unitById(unitId);requireTech(()=>{sheet('Log check — #'+esc(u.tagId),`<p class="muted" style="margin-top:0">Stamped with <b>${esc(S.settings.techName)}</b> + time. Leave blank what you didn't read.</p><div class="grid2"><label class="fld"><span class="lb">Volt L-L</span><input id="v_ll" type="number"/></label><label class="fld"><span class="lb">Volt L-N</span><input id="v_ln" type="number"/></label></div><div class="grid3"><label class="fld"><span class="lb">Amps L1</span><input id="v_a1" type="number"/></label><label class="fld"><span class="lb">Amps L2</span><input id="v_a2" type="number"/></label><label class="fld"><span class="lb">Amps L3</span><input id="v_a3" type="number"/></label></div><div class="grid3"><label class="fld"><span class="lb">Hz</span><input id="v_hz" type="number"/></label><label class="fld"><span class="lb">Load kW</span><input id="v_kw" type="number"/></label><label class="fld"><span class="lb">Load %</span><input id="v_lp" type="number"/></label></div><div class="grid3"><label class="fld"><span class="lb">Coolant°</span><input id="v_ct" type="number"/></label><label class="fld"><span class="lb">Oil T°</span><input id="v_ot" type="number"/></label><label class="fld"><span class="lb">Oil psi</span><input id="v_op" type="number"/></label></div><div class="grid3"><label class="fld"><span class="lb">Fuel %</span><input id="v_fuel" type="number"/></label><label class="fld"><span class="lb">Batt V</span><input id="v_bat" type="number"/></label><label class="fld"><span class="lb">DEF %</span><input id="v_def" type="number"/></label></div><label class="fld"><span class="lb">Engine hrs (updates service)</span><input id="v_hrs" type="number" value="${u.currentHours!=null?u.currentHours:''}"/></label><label class="fld"><span class="lb">Condition / notes</span><textarea id="v_notes" placeholder="Running clean…"></textarea></label><label class="fld"><span class="lb">Status</span><div class="segwrap" id="v_seg"><button type="button" data-v="running" class="on" style="background:var(--green);color:#fff" onclick="vseg(this)">Running</button><button type="button" data-v="staged" onclick="vseg(this)">Staged</button><button type="button" data-v="down" onclick="vseg(this)">Down</button></div></label><button class="btn primary block" onclick="saveVitals('${unitId}')">Save check</button>`,stopScanner);vsegVal='running';captureGPS();});}
+function vseg(b){vsegVal=b.dataset.v;document.querySelectorAll('#v_seg button').forEach(x=>{x.classList.remove('on');x.style.background='';x.style.color='';});b.classList.add('on');b.style.color='#fff';b.style.background=b.dataset.v==='running'?'var(--green)':b.dataset.v==='down'?'var(--red)':'var(--grey)';}
+function saveVitals(unitId){const u=unitById(unitId);const g=x=>num($('#'+x).value);const r={id:uid('rpt'),unitId,showId:S.currentShowId,techName:S.settings.techName,timestamp:now(),gps:lastGPS,voltageLL:g('v_ll'),voltageLN:g('v_ln'),ampsL1:g('v_a1'),ampsL2:g('v_a2'),ampsL3:g('v_a3'),hz:g('v_hz'),loadKw:g('v_kw'),loadPct:g('v_lp'),coolantTemp:g('v_ct'),oilTemp:g('v_ot'),oilPressure:g('v_op'),fuelLevelPct:g('v_fuel'),batteryV:g('v_bat'),defPct:g('v_def'),engineHours:g('v_hrs'),notes:$('#v_notes').value.trim()};S.reports.push(r);if(r.engineHours!=null)u.currentHours=r.engineHours;u.opStatus=vsegVal;u.updatedAt=now();save();closeSheet();openUnit(unitId);toast('Check logged');}
+let isegVal='cosmetic';
+function flagIssue(unitId){requireTech(()=>{draftPhotos=[];sheet('Flag issue',`<label class="fld"><span class="lb">Severity</span><div class="segwrap" id="i_seg"><button type="button" data-v="cosmetic" class="on" style="background:var(--yellow);color:#4a3a00" onclick="iseg(this)">Cosmetic</button><button type="button" data-v="maintenance" onclick="iseg(this)">Needs service</button><button type="button" data-v="down" onclick="iseg(this)">Hard down</button></div></label><label class="fld"><span class="lb">Title</span><input id="i_title" placeholder="e.g. Coolant leak"/></label><label class="fld"><span class="lb">Details</span><textarea id="i_text"></textarea></label><label class="fld"><span class="lb">Photos</span><div id="issuePhotoStrip">${renderDraftStrip()}</div><input type="file" id="issuePhotoInput" accept="image/*" style="display:none" onchange="handleIssuePhoto(this)"/><button type="button" class="btn ghost sm" onclick="document.getElementById('issuePhotoInput').click()">📷 Add photo</button></label><button class="btn danger block" onclick="saveIssue('${unitId}')">Report issue</button>`,stopScanner);isegVal='cosmetic';captureGPS();});}
+function iseg(b){isegVal=b.dataset.v;document.querySelectorAll('#i_seg button').forEach(x=>{x.classList.remove('on');x.style.background='';x.style.color='';});b.classList.add('on');if(b.dataset.v==='cosmetic'){b.style.background='var(--yellow)';b.style.color='#4a3a00';}else{b.style.background=b.dataset.v==='down'?'var(--red)':'var(--orange)';b.style.color='#fff';}}
+function saveIssue(unitId){const u=unitById(unitId);S.issues.push({id:uid('iss'),unitId,showId:S.currentShowId,severity:isegVal,title:$('#i_title').value.trim(),text:$('#i_text').value.trim(),techName:S.settings.techName,timestamp:now(),gps:lastGPS,resolved:false,photos:draftPhotos.slice()});if(isegVal==='down')u.opStatus='down';u.updatedAt=now();save();closeSheet();openUnit(unitId);toast('Issue flagged');}
+function editService(unitId){const u=unitById(unitId);sheet('Service hours',`<label class="fld"><span class="lb">Current engine hours</span><input id="s_cur" type="number" value="${u.currentHours!=null?u.currentHours:''}"/></label><label class="fld"><span class="lb">Next service due at (hrs)</span><input id="s_due" type="number" value="${u.serviceDueHours!=null?u.serviceDueHours:''}"/></label><button class="btn primary block" onclick="saveService('${unitId}')">Save</button>`);}
+function saveService(unitId){const u=unitById(unitId);u.currentHours=num($('#s_cur').value);u.serviceDueHours=num($('#s_due').value);u.updatedAt=now();save();closeSheet();openUnit(unitId);toast('Saved');}
+function markServiced(unitId){const u=unitById(unitId);sheet('Mark serviced',`<label class="fld"><span class="lb">Hours at service</span><input id="ms_at" type="number" value="${u.currentHours!=null?u.currentHours:''}"/></label><label class="fld"><span class="lb">Next interval (hrs)</span><input id="ms_int" type="number" value="250"/></label><button class="btn primary block" onclick="doServiced('${unitId}')">Done</button>`);}
+function doServiced(unitId){const u=unitById(unitId);const at=num($('#ms_at').value);u.currentHours=at;u.lastServiceHours=at;u.serviceDueHours=(at||0)+(num($('#ms_int').value)||0);u.updatedAt=now();save();closeSheet();openUnit(unitId);toast('Serviced ✓');}
+/* ===== SHOWS / SHOPS / MORE / SETTINGS ===== */
+let venueSite=null,venueMap=null,venueMarker=null;
+function initVenuePicker(){const el=$('#venuePicker');if(!el||typeof L==='undefined')return;if(venueMap){try{venueMap.remove();}catch(e){}venueMap=null;}venueMarker=null;const st=venueSite||{lat:39.5,lng:-98.35,zoom:4};venueMap=L.map(el,{attributionControl:false}).setView([st.lat,st.lng],venueSite?(venueSite.zoom||14):4);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(venueMap);if(venueSite)setVenueMarker(venueSite.lat,venueSite.lng);venueMap.on('click',e=>setVenueMarker(e.latlng.lat,e.latlng.lng));setTimeout(()=>{try{venueMap.invalidateSize();}catch(e){}},250);}
+function setVenueMarker(lat,lng){if(!venueMap)return;if(venueMarker)venueMarker.setLatLng([lat,lng]);else venueMarker=L.circleMarker([lat,lng],{radius:10,color:'#fff',weight:3,fillColor:'#c77455',fillOpacity:.95}).addTo(venueMap);const z=venueMap.getZoom();venueSite={lat:+(+lat).toFixed(6),lng:+(+lng).toFixed(6),zoom:z<12?15:z};const r=$('#venueReadout');if(r)r.textContent='✓ Venue set ('+venueSite.lat+', '+venueSite.lng+')';}
+function venueUseGPS(){const r=$('#venueReadout');if(r)r.textContent='Locating…';captureGPS(g=>{if(!g){if(r)r.textContent='Location unavailable — drop a pin or search instead.';return;}if(venueMap)venueMap.setView([g.lat,g.lng],16);setVenueMarker(g.lat,g.lng);});}
+function venueSearch(){const q=$('#sh_venueSearch')&&$('#sh_venueSearch').value.trim();if(!q)return;const r=$('#venueReadout');if(r)r.textContent='Searching…';try{fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q)).then(x=>x.json()).then(a=>{if(a&&a.length){const lat=+a[0].lat,lng=+a[0].lon;if(venueMap)venueMap.setView([lat,lng],15);setVenueMarker(lat,lng);}else{if(r)r.textContent='No match — drop a pin on the map instead.';}}).catch(()=>{if(r)r.textContent='Search unavailable here — use My location or drop a pin.';});}catch(e){if(r)r.textContent='Search unavailable here — use My location or drop a pin.';}}
+function editShow(id){const s=id?showById(id):{};venueSite=s.site?{lat:s.site.lat,lng:s.site.lng,zoom:s.site.zoom}:null;sheet(id?'Edit job':'New job',`<label class="fld"><span class="lb">Show / event name *</span><input id="sh_name" value="${esc(s.name||'')}" placeholder="Desert Sound Fest 2026"/></label><label class="fld"><span class="lb">Location</span><input id="sh_loc" value="${esc(s.location||'')}" placeholder="City, venue"/></label><label class="fld"><span class="lb">Start date</span><input id="sh_start" type="date" value="${esc(s.startDate||'')}"/></label><div class="lb" style="margin:4px 0 6px">Venue location (optional) — centers the map</div><div class="row" style="margin-bottom:8px"><input id="sh_venueSearch" placeholder="Search e.g. Wrigley Field"/><button type="button" class="btn dark" onclick="venueSearch()">Find</button></div><button type="button" class="btn ghost block" style="margin-bottom:8px" onclick="venueUseGPS()">📍 Use my current location</button><div id="venuePicker" style="height:200px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--surface2)"></div><p class="muted" id="venueReadout" style="font-size:12px;margin:6px 0 12px">${venueSite?('✓ Venue set ('+venueSite.lat+', '+venueSite.lng+')'):'Tap the map to drop a pin, or search / use your location.'}</p><button class="btn primary block" onclick="saveShow('${id||''}')">${id?'Save':'Create job'}</button>`);setTimeout(initVenuePicker,160);}
+function saveShow(id){const nm=$('#sh_name').value.trim();if(!nm){toast('Name required');return;}let s=id?showById(id):null;if(!s){s={id:uid('show'),createdAt:now()};S.shows.push(s);}s.name=nm;s.location=$('#sh_loc').value.trim();s.startDate=$('#sh_start').value||null;s.site=venueSite||null;S.currentShowId=s.id;save();closeSheet();openJob(s.id);toast('Job ready');}
+function openMore(){sheet('More',`<button class="btn ghost block" style="margin-bottom:9px" onclick="openShops()">Shops & what's on hand</button><button class="btn ghost block" style="margin-bottom:9px" onclick="openGlobalLog()">Global activity log</button><button class="btn ghost block" style="margin-bottom:9px" onclick="openServicePlanner()">Service planner</button><button class="btn ghost block" style="margin-bottom:9px" onclick="openTestQR()">Make a test QR code</button><button class="btn ghost block" onclick="openSettings()">Settings & backup</button>`);}
+function openShops(){const rows=S.shops.map(sh=>{const us=S.units.filter(u=>u.locationType==='shop'&&u.locationId===sh.id);return `<div class="listitem"><div class="between"><b>${esc(sh.name)}</b><span class="chip">${us.length} on hand</span></div>${us.length?`<div class="muted" style="font-size:12px;margin-top:5px">${us.map(u=>'#'+esc(u.tagId||u.serial)).join(', ')}</div>`:''}</div>`;}).join('');sheet('Shops',`<p class="muted" style="margin-top:0">A unit's location is wherever it was last scanned.</p><div class="card">${rows}</div><button class="btn ghost block" style="margin-top:12px" onclick="addShop()">+ Add shop</button>`);}
+function addShop(){const n=prompt('Shop name');if(n&&n.trim()){S.shops.push({id:uid('shop'),name:n.trim()});save();openShops();}}
+function openServicePlanner(){const list=S.units.filter(u=>serviceState(u).state!=='unknown').sort((a,b)=>serviceState(a).remaining-serviceState(b).remaining);sheet('Service planner',`<p class="muted" style="margin-top:0">Units by runtime left before service — put fresh units on long runs, near-service units on short runs.</p><div class="card" style="padding:4px 0">${list.length?list.map(u=>{const sv=serviceState(u);const cls=sv.state==='over'?'bad':(sv.state==='soon'?'warn':'ok');return `<div class="listitem" style="cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openUnit('${u.id}')"><div style="flex:1;min-width:0"><b>#${esc(u.tagId||u.serial)}</b> <span class="muted" style="font-size:12px">${esc([u.make,u.model].filter(Boolean).join(' '))}</span><div class="muted" style="font-size:11px">${u.currentHours??'?'}h now · at ${whereIs(u)}</div></div><span class="chip ${cls}">${sv.remaining<=0?('OVER '+Math.abs(sv.remaining)+'h'):(sv.remaining+'h')}</span></div>`;}).join(''):'<div class="empty"><p class="muted">No service info yet.</p></div>'}</div>`);}
+function openTestQR(){sheet('Make a test QR code',`<p class="muted" style="margin-top:0">Type any code, show this on another screen, and scan it to try the flow.</p><label class="fld"><span class="lb">Code text</span><div class="row"><input id="qrText" value="GEN-TEST-01"/><button class="btn dark" onclick="genQR()">Make</button></div></label><div class="qrbox"><div id="qrOut"></div></div>`);setTimeout(genQR,150);}
+function genQR(){const el=$('#qrOut');if(!el)return;el.innerHTML='';if(typeof QRCode==='undefined'){el.textContent='QR lib not loaded';return;}new QRCode(el,{text:($('#qrText').value||'GEN-TEST-01'),width:200,height:200});}
+function openSettings(){sheet('Settings',`<label class="fld"><span class="lb">Your name</span><input id="set_tech" value="${esc(S.settings.techName||'')}"/></label><div class="grid2"><label class="fld"><span class="lb">Service warn (hrs)</span><input id="set_warn" type="number" value="${S.settings.warnHours||20}"/></label><label class="fld"><span class="lb">Stale check (hrs)</span><input id="set_stale" type="number" value="${S.settings.staleHours||6}"/></label></div><label class="fld"><span class="lb">Service dept email</span><input id="set_email" value="${esc(S.settings.svcEmail||'')}"/></label><label class="fld"><span class="lb">Home screen</span><div class="segwrap" id="home_seg"><button type="button" data-v="jobs" class="${S.settings.homeTab!=='fleet'?'on':''}" style="${S.settings.homeTab!=='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Jobs</button><button type="button" data-v="fleet" class="${S.settings.homeTab==='fleet'?'on':''}" style="${S.settings.homeTab==='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Fleet</button></div></label><label class="fld"><span class="lb">Jobs icon</span><select id="set_icon">${[['jobs','Calendar'],['pin','Location flag'],['map','Map'],['bolt','Bolt'],['fleet','Grid']].map(([v,l])=>`<option value="${v}" ${S.settings.jobIcon===v?'selected':''}>${l}</option>`).join('')}</select></label><button class="btn primary block" onclick="saveSettings()">Save</button><hr class="sep"/><div class="lb" style="margin-bottom:6px">BACKUP</div><p class="muted" style="font-size:12px;margin-top:0">${STORAGE_OK?'✓ Saved on this device.':'⚠ Preview can\'t save; open the published link directly, or export.'} Multi-device = Phase 2.</p><div class="row"><button class="btn dark wide" onclick="exportData()">Export</button><button class="btn ghost wide" onclick="document.getElementById('impFile').click()">Import</button></div><input type="file" id="impFile" accept="application/json" style="display:none" onchange="importData(this)"/><hr class="sep"/><button class="btn ghost block" onclick="loadDemo()">Load demo data</button><button class="btn ghost block" style="margin-top:9px;color:var(--red)" onclick="wipe()">Reset everything</button><p class="muted" style="font-size:11px;margin-top:14px">FleetView · Phase 1 prototype. Camera, GPS & saving work best when you open the published link directly on your phone.</p>`,stopScanner);homeSegVal=S.settings.homeTab||'jobs';}
+let homeSegVal='jobs';function homeSeg(b){homeSegVal=b.dataset.v;document.querySelectorAll('#home_seg button').forEach(x=>{x.classList.remove('on');x.style.background='';x.style.color='';});b.classList.add('on');b.style.background='var(--accent)';b.style.color='#fff';}
+function saveSettings(){S.settings.techName=$('#set_tech').value.trim();S.settings.warnHours=num($('#set_warn').value)||20;S.settings.staleHours=num($('#set_stale').value)||6;S.settings.svcEmail=$('#set_email').value.trim();S.settings.homeTab=homeSegVal;S.settings.jobIcon=$('#set_icon').value;save();closeSheet();toast('Saved');render();}
+function exportData(){const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fleetview-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();}
+function importData(inp){const f=inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{S=JSON.parse(rd.result);save();closeSheet();go(S.settings.homeTab==='fleet'?'fleet':'jobs');toast('Imported');}catch(e){toast('Invalid file');}};rd.readAsText(f);}
+function wipe(){if(!confirm('Erase everything?'))return;S=blankState();save();closeSheet();go('jobs');}
+/* ===== SHEET ===== */
+let onSheetClose=null;
+function sheet(title,html,onClose,noPad){onSheetClose=onClose||null;$('#sheet').innerHTML=`<div class="sh-top"><h3>${esc(title)}</h3><button class="closex" onclick="closeSheet()">✕</button></div><div class="sh-body" ${noPad?'style="padding-top:14px"':''}>${html}</div>`;$('#overlay').classList.add('on');}
+function closeSheet(){if(onSheetClose){try{onSheetClose();}catch(e){}onSheetClose=null;}$('#overlay').classList.remove('on');render();}
+/* ===== THEME ===== */
+function applyTheme(){const t=(S.settings&&S.settings.theme==='light')?'light':'dark';document.documentElement.setAttribute('data-theme',t);const b=$('#themeBtn');if(b)b.textContent=t==='light'?'🌙':'☀️';const m=document.querySelector('meta[name=theme-color]');if(m)m.setAttribute('content',t==='light'?'#fffdf7':'#191714');}
+function toggleTheme(){S.settings.theme=(S.settings.theme==='light')?'dark':'light';save();applyTheme();toast(S.settings.theme==='light'?'☀️ Daylight':'🌙 Dark');}
+/* ===== DEMO ===== */
+function loadDemo(){S=blankState();S.settings.techName='Mike R.';const start=new Date(now()-2*86400000).toISOString().slice(0,10);
+  const show={id:uid('show'),name:'Lollapalooza 2026',location:'Chicago, IL',startDate:start,createdAt:now()};S.shows.push(show);S.currentShowId=show.id;
+  const base={lat:41.8735,lng:-87.6210};let n=0;
+  const mk=(tag,make,model,kw,brk,gal,wt,hrs,due,op,klass,area,cfg)=>{const u={id:uid('gen'),tagId:tag,serial:'S'+Math.floor(Math.random()*90000+10000),make,model,kw,breakerSize:brk,fuelType:'Diesel',tankGallons:gal,weightLbs:wt,currentHours:hrs,serviceDueHours:due,opStatus:op,klass,area,config:cfg||'',locationType:'show',locationId:show.id,createdAt:now()};S.units.push(u);
+    const g={lat:+(base.lat+(Math.random()-0.5)*0.012).toFixed(6),lng:+(base.lng+(Math.random()-0.5)*0.012).toFixed(6),acc:8};S.movements.push({id:uid('mv'),unitId:u.id,fromType:'shop',fromId:'shop_indio',toType:'show',toId:show.id,techName:'Mike R.',timestamp:now()-86400000,gps:g});return u;};
+  const a=mk('F24115','MQ','TW-300',300,'400A',95,9800,120,500,'running','big','Main Stage','Single 300kW');
+  const b=mk('F24990','MQ','TW-300',300,'400A',95,9800,486,500,'running','big','North Lot','Single 300kW');
+  const c=mk('A2207','Cat','XQ150',150,'400A',110,5200,540,500,'down','small','FOH');
+  const d=mk('H1042','Cummins','35kVA',35,'100A',30,2100,60,400,'staged','small','Vendor Row');d.locationType='transit';d.inTransitToShowId=show.id;d.locationId=null;d.trailer='Flatbed 4';
+  const e=mk('B5510','Cat','XQ500',500,'800A',180,14500,210,600,'running','big','Stage B','Single 500kW');
+  const f=mk('C0herz','Cummins','C60D6',60,'200A',60,2600,300,320,'running','small','Catering');
+  S.reports.push({id:uid('rpt'),unitId:a.id,showId:show.id,techName:'Mike R.',timestamp:now()-3600e3*2,voltageLL:208,voltageLN:120,ampsL1:210,ampsL2:205,ampsL3:198,hz:60,loadKw:180,loadPct:60,coolantTemp:190,oilPressure:55,fuelLevelPct:72,batteryV:13.6,engineHours:120,notes:'park→exit ok'});
+  S.reports.push({id:uid('rpt'),unitId:a.id,showId:show.id,techName:'Mike R.',timestamp:now()-3600e3*7,hz:60,loadKw:150,loadPct:50,coolantTemp:185,fuelLevelPct:88,engineHours:114});
+  S.reports.push({id:uid('rpt'),unitId:b.id,showId:show.id,techName:'Dana',timestamp:now()-3600e3*3,voltageLL:208,hz:60,loadKw:120,loadPct:40,coolantTemp:188,fuelLevelPct:18,engineHours:486,notes:'208V, paralleled #F24991'});
+  S.reports.push({id:uid('rpt'),unitId:e.id,showId:show.id,techName:'Mike R.',timestamp:now()-3600e3*1,voltageLL:480,hz:60,loadKw:300,loadPct:60,coolantTemp:192,fuelLevelPct:64,engineHours:210});
+  S.issues.push({id:uid('iss'),unitId:c.id,showId:show.id,severity:'down',title:"Won't sync",text:'Cranks, no sync to paralleling bus. Needs service dept.',techName:'Mike R.',timestamp:now()-3600e3,resolved:false});
+  save();closeSheet();go('jobs');toast('Demo loaded');}
+/* ===== INIT ===== */
+buildNav();$('#logoIc').innerHTML=IC.bolt;$('#fabScan').innerHTML=IC.scan+'<span>Scan</span>';
+(function init(){applyTheme();TAB=(S.settings.homeTab==='fleet')?'fleet':'jobs';setActiveNav(TAB);render();})();
+</script>
+</body>
+</html>
