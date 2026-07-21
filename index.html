@@ -284,7 +284,7 @@ async function flush(){if(!SYNC_READY||flushing)return;flushing=true;try{for(con
 function subscribeRealtime(){try{realtimeCh=sb.channel('fleet_all');TABLES.forEach(t=>realtimeCh.on('postgres_changes',{event:'*',schema:'public',table:t},scheduleReload));realtimeCh.subscribe();}catch(e){console.warn('rt',e);}}
 let reloadTimer=null;
 function scheduleReload(){clearTimeout(reloadTimer);reloadTimer=setTimeout(async()=>{if(flushing){scheduleReload();return;}await loadAll();render();},800);}
-function showAuth(){const g=$('#authgate');if(g)g.style.display='flex';}
+function showAuth(){const g=$('#authgate');if(g)g.style.display='flex';authMsg('');}
 function hideAuth(){const g=$('#authgate');if(g)g.style.display='none';}
 function authMsg(m){const e=$('#au_msg');if(e)e.textContent=m||'';}
 async function doSignIn(){const em=($('#au_email').value||'').trim(),pw=$('#au_pass').value||'';if(!em||!pw){authMsg('Enter email and password');return;}authMsg('Signing in…');const {error}=await sb.auth.signInWithPassword({email:em,password:pw});if(error){authMsg(error.message);return;}boot();}
