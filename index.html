@@ -13,6 +13,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#191714; --card:#221f1b; --surface2:#2b2723; --ink:#efe7d9; --ink2:#a99e8f; --line:#38332c;
@@ -180,6 +181,14 @@
   .evrow .ei svg{width:16px;height:16px;color:var(--ink2)}
   .evrow .et{flex:1;min-width:0}
   .evrow .ett{font-size:14px} .evrow .etm{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:2px}
+  #authgate{position:fixed;inset:0;z-index:100;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px}
+  #authgate .au-card{width:100%;max-width:340px;text-align:center}
+  #authgate .au-logo{width:56px;height:56px;border-radius:15px;background:var(--accent);display:grid;place-items:center;margin:0 auto 14px}
+  #authgate .au-logo svg{width:32px;height:32px;color:#fff}
+  #authgate .au-h1{font-family:var(--serif);font-size:32px;margin:0;font-weight:700}
+  #authgate .au-sub{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--ink2);margin:2px 0 22px}
+  #authgate input{margin-bottom:10px;text-align:center}
+  #authgate .au-msg{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-top:14px;min-height:16px}
 </style>
 </head>
 <body>
@@ -213,6 +222,18 @@
 </div>
 <div class="toast" id="toast"></div>
 <div id="photoOverlay" onclick="this.classList.remove('on')"><img id="photoBig" alt=""/></div>
+<div id="authgate">
+  <div class="au-card">
+    <div class="au-logo" id="au_logo"></div>
+    <div class="au-h1">FleetView</div>
+    <div class="au-sub">Generator Fleet Tracker</div>
+    <input id="au_email" type="email" autocomplete="email" placeholder="Email" />
+    <input id="au_pass" type="password" autocomplete="current-password" placeholder="Password (6+ characters)" />
+    <button class="btn primary block" onclick="doSignIn()">Sign in</button>
+    <button class="btn ghost block" style="margin-top:10px" onclick="doSignUp()">Create account</button>
+    <div id="au_msg" class="au-msg"></div>
+  </div>
+</div>
 
 <script>
 /* ===== ICONS ===== */
@@ -233,18 +254,46 @@ const IC={
   log:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v18M12 8h5M12 12h5M12 16h3"/></svg>',
   report:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6l12 5V4L3 9z"/><path d="M15 8a4 4 0 0 1 0 8"/><path d="M6 15v3a1.5 1.5 0 0 0 3 0v-1.4"/></svg>'
 };
-/* ===== STORAGE ===== */
-const KEY='fleetview_v2';let mem=null;
-function blankState(){return{settings:{techName:'',warnHours:20,staleHours:6,theme:'dark',homeTab:'jobs',svcEmail:'',jobIcon:'jobs'},
-  shops:[{id:'shop_nj',name:'New Jersey Shop'},{id:'shop_indio',name:'Indio Shop'},{id:'shop_orl',name:'Orlando Shop'}],
-  shows:[],units:[],reports:[],issues:[],movements:[],currentShowId:null};}
-function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}return mem||blankState();}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){mem=S;}}
-let S=load();let STORAGE_OK=true;try{localStorage.setItem('__t','1');localStorage.removeItem('__t');}catch(e){STORAGE_OK=false;mem=S;}
-if(!S.settings.jobIcon)S.settings.jobIcon='jobs';
+/* ===== BACKEND (Supabase shared sync) ===== */
+const SUPA_URL='https://eujgglfcpdfgskyqfggg.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1amdnbGZjcGRmZ3NreXFmZ2dnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODI4MDksImV4cCI6MjEwMDE1ODgwOX0.0OCf7DeBOeaU3WgihQ2E-cSQ7WdUFPy7DsQJ_2X_8xc';
+const sb=window.supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+const KEY='fleetview_settings_v1';let mem=null,STORAGE_OK=true,USER=null,SYNC_READY=false,realtimeCh=null;
+function blankState(){return{settings:{techName:'',warnHours:20,staleHours:6,theme:'dark',homeTab:'jobs',svcEmail:'',jobIcon:'jobs'},shops:[],shows:[],units:[],reports:[],issues:[],movements:[],currentShowId:null};}
+let S=blankState();
+function loadSettings(){try{const r=localStorage.getItem(KEY);if(r)Object.assign(S.settings,JSON.parse(r));}catch(e){}if(!S.settings.jobIcon)S.settings.jobIcon='jobs';}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S.settings));}catch(e){}scheduleFlush();}
+const DT={to:(v)=>v==null?null:new Date(v).toISOString(),from:(v)=>v==null?null:Date.parse(v)};
+const MAPS={
+  shops:{m:{id:'id',name:'name',createdAt:'created_at'},dt:['createdAt']},
+  shows:{m:{id:'id',name:'name',location:'location',startDate:'start_date',site:'site',createdAt:'created_at'},dt:['createdAt']},
+  units:{m:{id:'id',tagId:'tag_id',serial:'serial',klass:'klass',config:'config',trailer:'trailer',make:'make',model:'model',kw:'kw',breakerSize:'breaker_size',fuelType:'fuel_type',tankGallons:'tank_gallons',weightLbs:'weight_lbs',currentHours:'current_hours',serviceDueHours:'service_due_hours',lastServiceHours:'last_service_hours',area:'area',locNote:'loc_note',opStatus:'op_status',locationType:'location_type',locationId:'location_id',inTransitToShowId:'in_transit_to_show_id',photos:'photos',notes:'notes',createdAt:'created_at',updatedAt:'updated_at'},dt:['createdAt','updatedAt']},
+  reports:{m:{id:'id',unitId:'unit_id',showId:'show_id',techName:'tech_name',timestamp:'ts',gps:'gps',voltageLL:'voltage_ll',voltageLN:'voltage_ln',ampsL1:'amps_l1',ampsL2:'amps_l2',ampsL3:'amps_l3',hz:'hz',loadKw:'load_kw',loadPct:'load_pct',coolantTemp:'coolant_temp',oilTemp:'oil_temp',oilPressure:'oil_pressure',fuelLevelPct:'fuel_level_pct',batteryV:'battery_v',defPct:'def_pct',engineHours:'engine_hours',notes:'notes'},dt:['timestamp']},
+  issues:{m:{id:'id',unitId:'unit_id',showId:'show_id',severity:'severity',title:'title',text:'text',techName:'tech_name',timestamp:'ts',gps:'gps',resolved:'resolved',photos:'photos'},dt:['timestamp']},
+  movements:{m:{id:'id',unitId:'unit_id',fromType:'from_type',fromId:'from_id',toType:'to_type',toId:'to_id',techName:'tech_name',timestamp:'ts',gps:'gps'},dt:['timestamp']}
+};
+function toRow(t,o){const {m,dt}=MAPS[t];const r={};for(const a in m){let v=o[a];if(v===undefined)v=null;if(dt.includes(a))v=DT.to(v);r[m[a]]=v;}return r;}
+function fromRow(t,row){const {m,dt}=MAPS[t];const o={};for(const a in m){let v=row[m[a]];if(v!==undefined&&dt.includes(a))v=DT.from(v);o[a]=(v===undefined?null:v);}return o;}
+const TABLES=['shops','shows','units','reports','issues','movements'];
+async function loadAll(){for(const t of TABLES){const {data,error}=await sb.from(t).select('*');if(error){console.warn('load',t,error.message);continue;}S[t]=(data||[]).map(r=>fromRow(t,r));}snapshot();}
+let SNAP={};
+function snapshot(){SNAP={};TABLES.forEach(t=>{SNAP[t]={};S[t].forEach(o=>{SNAP[t][o.id]=JSON.stringify(toRow(t,o));});});}
+let flushTimer=null,flushing=false;
+function scheduleFlush(){if(!SYNC_READY)return;clearTimeout(flushTimer);flushTimer=setTimeout(flush,450);}
+async function flush(){if(!SYNC_READY||flushing)return;flushing=true;try{for(const t of TABLES){const cur={};S[t].forEach(o=>{cur[o.id]=o;});const ups=[];for(const id in cur){const rs=JSON.stringify(toRow(t,cur[id]));if(!SNAP[t]||SNAP[t][id]!==rs)ups.push(toRow(t,cur[id]));}if(ups.length){const {error}=await sb.from(t).upsert(ups);if(error)console.warn('upsert',t,error.message);}const dels=[];if(SNAP[t])for(const id in SNAP[t]){if(!(id in cur))dels.push(id);}if(dels.length){const {error}=await sb.from(t).delete().in('id',dels);if(error)console.warn('del',t,error.message);}}snapshot();}catch(e){console.warn('flush',e);}flushing=false;}
+function subscribeRealtime(){try{realtimeCh=sb.channel('fleet_all');TABLES.forEach(t=>realtimeCh.on('postgres_changes',{event:'*',schema:'public',table:t},scheduleReload));realtimeCh.subscribe();}catch(e){console.warn('rt',e);}}
+let reloadTimer=null;
+function scheduleReload(){clearTimeout(reloadTimer);reloadTimer=setTimeout(async()=>{if(flushing){scheduleReload();return;}await loadAll();render();},800);}
+function showAuth(){const g=$('#authgate');if(g)g.style.display='flex';}
+function hideAuth(){const g=$('#authgate');if(g)g.style.display='none';}
+function authMsg(m){const e=$('#au_msg');if(e)e.textContent=m||'';}
+async function doSignIn(){const em=($('#au_email').value||'').trim(),pw=$('#au_pass').value||'';if(!em||!pw){authMsg('Enter email and password');return;}authMsg('Signing in…');const {error}=await sb.auth.signInWithPassword({email:em,password:pw});if(error){authMsg(error.message);return;}boot();}
+async function doSignUp(){const em=($('#au_email').value||'').trim(),pw=$('#au_pass').value||'';if(!em||pw.length<6){authMsg('Enter email and a 6+ character password');return;}authMsg('Creating account…');const {data,error}=await sb.auth.signUp({email:em,password:pw});if(error){authMsg(error.message);return;}if(!(data&&data.session)){const r2=await sb.auth.signInWithPassword({email:em,password:pw});if(r2.error){authMsg('Account created. If confirmation is required, check your email, then Sign in.');return;}}boot();}
+async function doSignOut(){try{if(realtimeCh)sb.removeChannel(realtimeCh);}catch(e){}try{await sb.auth.signOut();}catch(e){}location.reload();}
+async function boot(){authMsg('Loading…');const {data:{session}}=await sb.auth.getSession();if(!session){showAuth();return;}USER=session.user;S.settings.techName=(USER.email?USER.email.split('@')[0]:'Tech');hideAuth();await loadAll();SYNC_READY=true;subscribeRealtime();TAB=(S.settings.homeTab==='fleet')?'fleet':'jobs';setActiveNav(TAB);render();}
 /* ===== HELPERS ===== */
 const $=(s,r=document)=>r.querySelector(s);
-const uid=(p='id')=>p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const uid=(p='id')=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,9));
 const now=()=>Date.now();
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v)=>{const n=parseFloat(v);return isNaN(n)?null:n;};
@@ -463,7 +512,7 @@ function gpsLink(g){if(!g)return '';return `<a href="https://www.google.com/maps
 /* ===== PHOTOS ===== */
 let draftPhotos=[];
 function compressImage(file,cb){const rd=new FileReader();rd.onload=()=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const max=1024;if(w>h&&w>max){h=Math.round(h*max/w);w=max;}else if(h>=w&&h>max){w=Math.round(w*max/h);h=max;}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);try{cb(c.toDataURL('image/jpeg',0.55));}catch(e){toast('Could not process image');}};img.onerror=()=>toast('Bad image');img.src=rd.result;};rd.readAsDataURL(file);}
-function persistOrWarn(undo){if(!STORAGE_OK){mem=S;return true;}try{localStorage.setItem(KEY,JSON.stringify(S));return true;}catch(e){if(undo)undo();toast('Storage full — remove some photos. Cloud photos come in Phase 2.');return false;}}
+function persistOrWarn(undo){save();return true;}
 function bigPhoto(src){$('#photoBig').src=src;$('#photoOverlay').classList.add('on');}
 function photoStrip(items,vp,rp){return `<div class="photostrip">${items.map((p,i)=>`<div class="ph"><img src="${p}" onclick="${vp}${i})"/>${rp?`<button class="rm" onclick="${rp}${i})">✕</button>`:''}</div>`).join('')}</div>`;}
 function renderDraftStrip(){return draftPhotos.length?photoStrip(draftPhotos,'bigDraftPhoto(','rmDraftPhoto('):'<p class="muted" style="font-size:12px;margin:2px 0 8px">No photos added.</p>';}
@@ -553,7 +602,7 @@ function addShop(){const n=prompt('Shop name');if(n&&n.trim()){S.shops.push({id:
 function openServicePlanner(){const list=S.units.filter(u=>serviceState(u).state!=='unknown').sort((a,b)=>serviceState(a).remaining-serviceState(b).remaining);sheet('Service planner',`<p class="muted" style="margin-top:0">Units by runtime left before service — put fresh units on long runs, near-service units on short runs.</p><div class="card" style="padding:4px 0">${list.length?list.map(u=>{const sv=serviceState(u);const cls=sv.state==='over'?'bad':(sv.state==='soon'?'warn':'ok');return `<div class="listitem" style="cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openUnit('${u.id}')"><div style="flex:1;min-width:0"><b>#${esc(u.tagId||u.serial)}</b> <span class="muted" style="font-size:12px">${esc([u.make,u.model].filter(Boolean).join(' '))}</span><div class="muted" style="font-size:11px">${u.currentHours??'?'}h now · at ${whereIs(u)}</div></div><span class="chip ${cls}">${sv.remaining<=0?('OVER '+Math.abs(sv.remaining)+'h'):(sv.remaining+'h')}</span></div>`;}).join(''):'<div class="empty"><p class="muted">No service info yet.</p></div>'}</div>`);}
 function openTestQR(){sheet('Make a test QR code',`<p class="muted" style="margin-top:0">Type any code, show this on another screen, and scan it to try the flow.</p><label class="fld"><span class="lb">Code text</span><div class="row"><input id="qrText" value="GEN-TEST-01"/><button class="btn dark" onclick="genQR()">Make</button></div></label><div class="qrbox"><div id="qrOut"></div></div>`);setTimeout(genQR,150);}
 function genQR(){const el=$('#qrOut');if(!el)return;el.innerHTML='';if(typeof QRCode==='undefined'){el.textContent='QR lib not loaded';return;}new QRCode(el,{text:($('#qrText').value||'GEN-TEST-01'),width:200,height:200});}
-function openSettings(){sheet('Settings',`<label class="fld"><span class="lb">Your name</span><input id="set_tech" value="${esc(S.settings.techName||'')}"/></label><div class="grid2"><label class="fld"><span class="lb">Service warn (hrs)</span><input id="set_warn" type="number" value="${S.settings.warnHours||20}"/></label><label class="fld"><span class="lb">Stale check (hrs)</span><input id="set_stale" type="number" value="${S.settings.staleHours||6}"/></label></div><label class="fld"><span class="lb">Service dept email</span><input id="set_email" value="${esc(S.settings.svcEmail||'')}"/></label><label class="fld"><span class="lb">Home screen</span><div class="segwrap" id="home_seg"><button type="button" data-v="jobs" class="${S.settings.homeTab!=='fleet'?'on':''}" style="${S.settings.homeTab!=='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Jobs</button><button type="button" data-v="fleet" class="${S.settings.homeTab==='fleet'?'on':''}" style="${S.settings.homeTab==='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Fleet</button></div></label><label class="fld"><span class="lb">Jobs icon</span><select id="set_icon">${[['jobs','Calendar'],['pin','Location flag'],['map','Map'],['bolt','Bolt'],['fleet','Grid']].map(([v,l])=>`<option value="${v}" ${S.settings.jobIcon===v?'selected':''}>${l}</option>`).join('')}</select></label><button class="btn primary block" onclick="saveSettings()">Save</button><hr class="sep"/><div class="lb" style="margin-bottom:6px">BACKUP</div><p class="muted" style="font-size:12px;margin-top:0">${STORAGE_OK?'✓ Saved on this device.':'⚠ Preview can\'t save; open the published link directly, or export.'} Multi-device = Phase 2.</p><div class="row"><button class="btn dark wide" onclick="exportData()">Export</button><button class="btn ghost wide" onclick="document.getElementById('impFile').click()">Import</button></div><input type="file" id="impFile" accept="application/json" style="display:none" onchange="importData(this)"/><hr class="sep"/><button class="btn ghost block" onclick="loadDemo()">Load demo data</button><button class="btn ghost block" style="margin-top:9px;color:var(--red)" onclick="wipe()">Reset everything</button><p class="muted" style="font-size:11px;margin-top:14px">FleetView · Phase 1 prototype. Camera, GPS & saving work best when you open the published link directly on your phone.</p>`,stopScanner);homeSegVal=S.settings.homeTab||'jobs';}
+function openSettings(){sheet('Settings',`<label class="fld"><span class="lb">Your name</span><input id="set_tech" value="${esc(S.settings.techName||'')}"/></label><div class="grid2"><label class="fld"><span class="lb">Service warn (hrs)</span><input id="set_warn" type="number" value="${S.settings.warnHours||20}"/></label><label class="fld"><span class="lb">Stale check (hrs)</span><input id="set_stale" type="number" value="${S.settings.staleHours||6}"/></label></div><label class="fld"><span class="lb">Service dept email</span><input id="set_email" value="${esc(S.settings.svcEmail||'')}"/></label><label class="fld"><span class="lb">Home screen</span><div class="segwrap" id="home_seg"><button type="button" data-v="jobs" class="${S.settings.homeTab!=='fleet'?'on':''}" style="${S.settings.homeTab!=='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Jobs</button><button type="button" data-v="fleet" class="${S.settings.homeTab==='fleet'?'on':''}" style="${S.settings.homeTab==='fleet'?'background:var(--accent);color:#fff':''}" onclick="homeSeg(this)">Fleet</button></div></label><label class="fld"><span class="lb">Jobs icon</span><select id="set_icon">${[['jobs','Calendar'],['pin','Location flag'],['map','Map'],['bolt','Bolt'],['fleet','Grid']].map(([v,l])=>`<option value="${v}" ${S.settings.jobIcon===v?'selected':''}>${l}</option>`).join('')}</select></label><button class="btn primary block" onclick="saveSettings()">Save</button><hr class="sep"/><div class="lb" style="margin-bottom:6px">ACCOUNT</div><p class="muted" style="font-size:12px;margin-top:0">Signed in as <b>${esc((USER&&USER.email)||'—')}</b>. Your fleet data is shared live with your team.</p><div class="row"><button class="btn dark wide" onclick="exportData()">Export backup</button><button class="btn ghost wide" onclick="doSignOut()">Sign out</button></div><p class="muted" style="font-size:11px;margin-top:14px">FleetView · Team mode — live shared data.</p>`,stopScanner);homeSegVal=S.settings.homeTab||'jobs';}
 let homeSegVal='jobs';function homeSeg(b){homeSegVal=b.dataset.v;document.querySelectorAll('#home_seg button').forEach(x=>{x.classList.remove('on');x.style.background='';x.style.color='';});b.classList.add('on');b.style.background='var(--accent)';b.style.color='#fff';}
 function saveSettings(){S.settings.techName=$('#set_tech').value.trim();S.settings.warnHours=num($('#set_warn').value)||20;S.settings.staleHours=num($('#set_stale').value)||6;S.settings.svcEmail=$('#set_email').value.trim();S.settings.homeTab=homeSegVal;S.settings.jobIcon=$('#set_icon').value;save();closeSheet();toast('Saved');render();}
 function exportData(){const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fleetview-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();}
@@ -585,8 +634,10 @@ function loadDemo(){S=blankState();S.settings.techName='Mike R.';const start=new
   S.issues.push({id:uid('iss'),unitId:c.id,showId:show.id,severity:'down',title:"Won't sync",text:'Cranks, no sync to paralleling bus. Needs service dept.',techName:'Mike R.',timestamp:now()-3600e3,resolved:false});
   save();closeSheet();go('jobs');toast('Demo loaded');}
 /* ===== INIT ===== */
-buildNav();$('#logoIc').innerHTML=IC.bolt;$('#fabScan').innerHTML=IC.scan+'<span>Scan</span>';
-(function init(){applyTheme();TAB=(S.settings.homeTab==='fleet')?'fleet':'jobs';setActiveNav(TAB);render();})();
+buildNav();$('#logoIc').innerHTML=IC.bolt;$('#fabScan').innerHTML=IC.scan+'<span>Scan</span>';var _al=$('#au_logo');if(_al)_al.innerHTML=IC.bolt;
+loadSettings();applyTheme();
+try{sb.auth.onAuthStateChange((ev)=>{if(ev==='SIGNED_OUT')showAuth();});}catch(e){}
+(async function init(){try{await boot();}catch(e){showAuth();authMsg('Connection problem — check your network and retry.');}})();
 </script>
 </body>
 </html>
